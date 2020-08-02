@@ -1,0 +1,8 @@
+**/__pycache__
+/.DS_store
+/.vscode
+/.idea
+/*.egg-info
+/.ipynb_checkpoints
+/.mypy_cache
+/.venv

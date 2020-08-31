@@ -25,7 +25,7 @@ flake8 = "^3.8.3"
 ipython = "^7.15.0"
 
 [tool.black]
-line-length = 96
+#line-length = 96
 target-version = ['py36']
 
 [tool.poetry.scripts]

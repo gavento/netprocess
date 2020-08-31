@@ -23,14 +23,21 @@ def build_sir_update_function(edge_beta: float, gamma: float):
         return jnp.array([0.0, 1.0, 0.0]) * p + jnp.array([1.0, 0.0, 0.0]) * (1.0 - p)
 
     upfun = primitives.build_update_function(
-        [trans_from_s, jnp.array([0.0, 1.0 - gamma, gamma]), jnp.array([0.0, 0.0, 1.0]),]
+        [
+            trans_from_s,
+            jnp.array([0.0, 1.0 - gamma, gamma]),
+            jnp.array([0.0, 0.0, 1.0]),
+        ]
     )
 
     def update_state(rng_key, edges, states):
         adjacent_states = networks.count_inneighbor_states(edges, states, 3)
         # Note: since we do not use t2 at all, JAX JIT should omit its computation
         s2, t2 = upfun(
-            rng_key, states, jnp.zeros(states.shape[0], dtype=jnp.int64), adjacent_states
+            rng_key,
+            states,
+            jnp.zeros(states.shape[0], dtype=jnp.int64),
+            adjacent_states,
         )
         return s2
 

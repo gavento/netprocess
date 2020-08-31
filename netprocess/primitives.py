@@ -19,7 +19,10 @@ def build_switch(funs: List[Any]) -> Callable[..., Any]:
         return lambda _, *a: f(*a)
 
     return lambda x, *a: jax.lax.cond(
-        x >= len(funs) - 1, lambda _: f(*a), lambda _: build_switch(funs[:-1])(x, *a), None,
+        x >= len(funs) - 1,
+        lambda _: f(*a),
+        lambda _: build_switch(funs[:-1])(x, *a),
+        None,
     )
 
 
@@ -47,7 +50,9 @@ def build_update_function(transition_likelihood_functions):
         state2 = jax.random.choice(key, len(transition_likelihood_functions), p=probs)
         return (
             state2,
-            jax.lax.cond(state2 == state, lambda _: time_in_state + 1, lambda _: 0, None),
+            jax.lax.cond(
+                state2 == state, lambda _: time_in_state + 1, lambda _: 0, None
+            ),
         )
 
     update_node_vmap = jax.vmap(update_node)

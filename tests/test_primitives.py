@@ -54,7 +54,9 @@ def test_build_update_function():
     assert list(t2) == [0, 0, 1]
 
     # Builds random coins
-    tf2 = primitives.build_update_function([jnp.array([0.5, 0.5]), jnp.array([0.5, 0.5])])
+    tf2 = primitives.build_update_function(
+        [jnp.array([0.5, 0.5]), jnp.array([0.5, 0.5])]
+    )
     s0 = jnp.zeros(10000, dtype=jnp.int32)
     t0 = jnp.zeros(10000, dtype=jnp.int32)
     s1, t1 = tf2(k, s0, t0)

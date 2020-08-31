@@ -10,6 +10,6 @@ repos:
             exclude: tests/data/toc-ntk-sample/.*
           - id: check-xml
     - repo: https://github.com/psf/black
-      rev: 19.10b0
+      rev: 20.8b1
       hooks:
           - id: black

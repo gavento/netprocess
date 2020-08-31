@@ -16,8 +16,9 @@ jobs:
         run: python -m pip install --upgrade black
       - name: Check with Black
         run: |
-            echo $PWD
-            black . --check --exclude get-poetry.py
+          echo $PWD
+          black --version
+          black . --check --exclude get-poetry.py
 
   Test:
     needs: Linting

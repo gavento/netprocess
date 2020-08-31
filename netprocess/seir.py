@@ -36,7 +36,7 @@ def build_sir_update_function(edge_beta: float, gamma: float):
         s2, t2 = upfun(
             rng_key,
             states,
-            jnp.zeros(states.shape[0], dtype=jnp.int64),
+            jnp.zeros(states.shape[0], dtype=jnp.int32),
             adjacent_states,
         )
         return s2

@@ -1,6 +1,8 @@
-import networkx as nx
-import jax.numpy as jnp
+import jax
 import jax.lax as lax
+import jax.numpy as jnp
+import networkx as nx
+
 from .utils import is_integer
 
 
@@ -30,3 +32,12 @@ def sum_from_inneighbors(edges: jnp.ndarray, node_data: jnp.ndarray) -> jnp.ndar
         node_data[edges[:, 0]],
         lax.ScatterDimensionNumbers((1,), (0,), (0,)),
     )
+
+
+def count_inneighbor_states(
+    edges: jnp.ndarray, node_states: jnp.ndarray, states: int, dtype=jnp.int32
+) -> jnp.ndarray:
+    (n,) = node_states.shape
+    assert edges.shape[1] == 2
+    node_states_1hot = jax.nn.one_hot(node_states, states, dtype=dtype)
+    return sum_from_inneighbors(edges, node_states_1hot)

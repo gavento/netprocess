@@ -19,6 +19,7 @@ jobs:
           echo $PWD
           black --version
           black . --check --exclude get-poetry.py
+          black . --diff --exclude get-poetry.py
 
   Test:
     needs: Linting

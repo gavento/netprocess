@@ -1,4 +1,8 @@
+import typing
+
 import jax.numpy as jnp
+
+ArrayDict = typing.Dict[str, jnp.ndarray]
 
 
 def is_integer(x):

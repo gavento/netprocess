@@ -20,6 +20,46 @@ log = logging.getLogger(__name__)
 @click.option("-s", "--steps", default=1000)
 @click.option("-b", "--edge_beta", default=0.05)
 @click.option("-g", "--gamma", default=0.07)
+def bench_sir2(n, k, steps, edge_beta, gamma):
+    rng = jax.random.PRNGKey(42)
+
+    for _ in tqdm.trange(1, desc="create graph"):
+        g = nx.random_graphs.barabasi_albert_graph(n, k)
+        log.info(
+            f"Graph: n={g.order()}, m={g.size()}, avg_deg={2 * g.size() / g.order()}"
+        )
+    for _ in tqdm.trange(1, desc="edge list"):
+        edges = networks.nx_graph_to_edges(g)
+
+    nd = {
+        "state": jnp.zeros(n, dtype=jnp.int32),
+        "time": jnp.zeros(n, dtype=jnp.int32),
+        "infected": jnp.zeros(n, dtype=jnp.int32),
+    }
+    nd["state"] = jax.ops.index_update(nd["state"], n // 2, 1)
+
+    for _ in tqdm.trange(1, desc="JIT update fn"):
+        update = seir.build_sir_update(
+            edge_beta, gamma, count_time=True, count_infected=True
+        )
+        _ = update(rng, nd, edges)["state"][0]  # Force evaluation for timing
+
+    for i in tqdm.trange(steps, desc="SIR steps"):
+        if i % max(steps // 50, 1) == 0:
+            counts = jnp.sum(jax.nn.one_hot(nd["state"], 3), axis=0) / n
+            log.info(
+                f"Step {i:-4d}   S: {counts[0]:.3f}   I: {counts[1]:.3f}   R: {counts[2]:.3f}"
+            )
+        rng2, rng = jax.random.split(rng)
+        nd = update(rng2, nd, edges)
+
+
+@cli.command()
+@click.option("-N", default=1000)
+@click.option("-K", default=3)
+@click.option("-s", "--steps", default=1000)
+@click.option("-b", "--edge_beta", default=0.05)
+@click.option("-g", "--gamma", default=0.07)
 def bench_sir(n, k, steps, edge_beta, gamma):
     rng = jax.random.PRNGKey(42)
 

@@ -127,15 +127,19 @@ def step_edge_node_messages(
     return new_nodes_dict, new_edges_dict
 
 
-def build_step_edge_node_messages(node_f, edge_f, **jit_kwargs):
+def build_step_edge_node_messages(node_f, edge_f, jit=True, **jit_kwargs):
     """
     Return a jitted intance of step_edge_node_messages (see its docs).
 
+    JIT can be bypassed by an option `jit=False` (for uniform API).
     Returns: `step_edge_node_messages_jitted(
         rng_key, nodes_dict, edges_dict, edges_from_to
         ) -> (new_nodes_dict, new_edges_dict)`
     """
-    f = jax.jit(step_edge_node_messages, (4, 5), **jit_kwargs)
+    if jit:
+        f = jax.jit(step_edge_node_messages, (4, 5), **jit_kwargs)
+    else:
+        f = step_edge_node_messages
 
     def step_edge_node_messages_jitted(
         rng_key: jax.random.PRNGKey,
@@ -143,6 +147,6 @@ def build_step_edge_node_messages(node_f, edge_f, **jit_kwargs):
         edges_dict: ArrayDict,
         edges_from_to: jnp.ndarray,
     ) -> (ArrayDict, ArrayDict):
-        f(rng_key, nodes_dict, edges_dict, edges_from_to, node_f, edge_f)
+        return f(rng_key, nodes_dict, edges_dict, edges_from_to, node_f, edge_f)
 
     return step_edge_node_messages_jitted

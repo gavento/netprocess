@@ -8,26 +8,10 @@ import jax.numpy as jnp
 import networkx as nx
 from jax.random import PRNGKey
 
-from .. import networks
+from .. import networks, utils
 from .state import ProcessState, ProcessStateData
 
 log = logging.getLogger(__name__)
-
-
-def update_dict_disjoint(d, update):
-    """Update dictionary in-place, raise ValueError on key conflict."""
-    for k, v in update.items():
-        if k in d:
-            raise ValueError(f"Update key {k} already present")
-        d[k] = v
-
-
-def update_dict_present(d, update):
-    """Update dictionary in-place, raise ValueError on new key."""
-    for k, v in update.items():
-        if k not in d:
-            raise ValueError(f"Update key {k} not present in update dict")
-        d[k] = v
 
 
 class NetworkProcess:
@@ -93,7 +77,7 @@ class NetworkProcess:
                 r = jax.random.fold_in(rng_key, i)
                 updates = op.update_edge(r, params, e_pt, from_pt, to_pt)
                 for tgt, up in zip([e_up, from_up, to_up], updates):
-                    update_dict_disjoint(tgt, up)
+                    utils.update_dict_disjoint(tgt, up)
             return e_up, from_up, to_up
 
         edge_update_pytree, e2n_from_pytree, e2n_to_pytree = jax.vmap(
@@ -106,7 +90,7 @@ class NetworkProcess:
             n2e_to_pytree,
         )
         new_edges_pytree = dict(state.edges_pytree)
-        update_dict_present(new_edges_pytree, edge_update_pytree)
+        utils.update_dict_present(new_edges_pytree, edge_update_pytree)
 
         # Step 3: Compute edge-to-node value aggregates
         def scatter_op(agg_op, agg_base, e_vals, e_endpoints):
@@ -150,7 +134,7 @@ class NetworkProcess:
             for i, op in enumerate(self.operations):
                 r = jax.random.fold_in(rng_key, i)
                 update = op.update_node(r, params, n_pt, in_edges_agg, out_edges_agg)
-                update_dict_disjoint(n_up, update)
+                utils.update_dict_disjoint(n_up, update)
             return n_up
 
         node_update_pytree = jax.vmap(node_f, in_axes=(None, None, 0, 0, 0))(
@@ -161,7 +145,7 @@ class NetworkProcess:
             out_edges_agg,
         )
         new_nodes_pytree = dict(state.nodes_pytree)
-        update_dict_present(new_nodes_pytree, node_update_pytree)
+        utils.update_dict_present(new_nodes_pytree, node_update_pytree)
 
         # Step 5: Compute param updates and records
         p_up, records = {}, {}
@@ -173,9 +157,9 @@ class NetworkProcess:
                 new_edges_pytree,
             )
             for tgt, up in zip([p_up, records], updates):
-                update_dict_disjoint(tgt, up)
+                utils.update_dict_disjoint(tgt, up)
         new_params_pytree = dict(state.params_pytree)
-        update_dict_present(new_params_pytree, p_up)
+        utils.update_dict_present(new_params_pytree, p_up)
 
         # Create the new state
         new_state = state._replace(

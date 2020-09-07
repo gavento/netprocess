@@ -6,6 +6,22 @@ import jax
 ArrayDict = typing.Dict[str, jnp.ndarray]
 
 
+def update_dict_disjoint(d, update):
+    """Update dictionary in-place, raise ValueError on key conflict."""
+    for k, v in update.items():
+        if k in d:
+            raise ValueError(f"Update key {k} already present")
+        d[k] = v
+
+
+def update_dict_present(d, update):
+    """Update dictionary in-place, raise ValueError on new key."""
+    for k, v in update.items():
+        if k not in d:
+            raise ValueError(f"Update key {k} not present in update dict")
+        d[k] = v
+
+
 def is_integer(x):
     if isinstance(x, int):
         return True

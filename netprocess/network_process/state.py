@@ -1,6 +1,7 @@
 import collections
 
 import jax
+import jax.numpy as jnp
 
 from .. import jax_utils
 
@@ -12,6 +13,13 @@ ProcessStateData = collections.namedtuple(
 
 
 class ProcessState:
+    """
+
+    * `params_pytree` always contains "n" (# of nodes) and "m" (# of edges)
+    * `nodes_pytree` always contains "i" (node index)
+    * `edges_pytree` always contains "i" (edge index)
+    """
+
     def __init__(
         self,
         rng_key: jax.random.PRNGKey,
@@ -34,6 +42,11 @@ class ProcessState:
         self.params_pytree.setdefault("n", self.n)
         self.m = jnp.array(self.edges.shape[0], dtype=jnp.int32)
         self.params_pytree.setdefault("m", self.m)
+        # Ensure nodes and edges have numbers
+        if "i" not in self.edges_pytree:
+            self.edges_pytree["i"] = jnp.arange(self.m, dtype=jnp.int32)
+        if "i" not in self.nodes_pytree:
+            self.nodes_pytree["i"] = jnp.arange(self.n, dtype=jnp.int32)
         # Optional Process reference
         self.process = process
         # Chunked stats records

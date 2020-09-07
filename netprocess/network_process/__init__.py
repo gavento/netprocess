@@ -1,3 +1,3 @@
 from .operation import OperationBase
-from .process import Process
+from .process import NetworkProcess
 from .state import ProcessState, ProcessStateData

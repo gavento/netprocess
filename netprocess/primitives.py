@@ -26,23 +26,6 @@ def build_switch(funs: List[Any]) -> Callable[..., Any]:
     )
 
 
-def switch(i: int, funs: List[Any], *args):
-    """
-    Return `funs[i](*args)`
-    """
-    f = funs[-1]
-    if not callable(f):
-        f = lambda *_: funs[-1]
-    if len(funs) == 1:
-        return f(*args)
-    return jax.lax.cond(
-        i >= len(funs) - 1,
-        lambda _: f(*args),
-        lambda _: switch(i, funs[:-1], *args),
-        None,
-    )
-
-
 def update_node_states(prop_dict_v, update_funs):
     """
     Given

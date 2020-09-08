@@ -1,3 +1,7 @@
+import jax
+import jax.numpy as jnp
+
+
 class OperationBase:
     def prepare_state_pytrees(self, state):
         """

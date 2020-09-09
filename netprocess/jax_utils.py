@@ -3,8 +3,10 @@ import typing
 import jax
 import jax.numpy as jnp
 
+from .utils import PytreeDict, Pytree
 
-def ensure_array(a, dtype=None):
+
+def ensure_array(a, dtype=None) -> jnp.DeviceArray:
     """Return a `DeviceArray` form of `a` with given dtype, NOP if already is."""
     if not isinstance(a, jnp.DeviceArray):
         return jnp.array(a, dtype=dtype)
@@ -13,18 +15,27 @@ def ensure_array(a, dtype=None):
     return a
 
 
-def ensure_pytree(pt, dtype=None, ensure_dict=True):
+def ensure_pytree(pt: Pytree, dtype=None, ensure_dict=True) -> Pytree:
     """
     Return a JAX pytree of `DeviceArray`s (`dtype` if given).
 
     By default also check that the top-level is a dict.
     """
-    if not isinstance(pt, dict):
+    if ensure_dict and not isinstance(pt, dict):
         raise TypeError(f"Expected PyTree dict, got {type(pt)}")
     return jax.tree_util.tree_map(lambda a: ensure_array(a, dtype=dtype), pt)
 
 
-def concatenate_pytrees(pytrees: typing.List, check_treedefs: bool = True, axis=0):
+def concatenate_pytrees(
+    pytrees: typing.Iterable[Pytree], check_treedefs: bool = True, axis=0
+) -> Pytree:
+    """
+    Concatenate the matching ndarrays in an iterable of pytrees.
+
+    Returns pytree of the same tree type.
+    By default checks that the treedefs actually match
+    (otherwise only leaf count and order matters).
+    """
     arrays, treedefs = jax.tree_util.unzip2(
         jax.tree_util.tree_flatten(pt) for pt in pytrees
     )
@@ -58,7 +69,7 @@ def cond(val, true_res, false_res):
     return jax.lax.cond(val, tr, fr, None)
 
 
-def switch(i: jnp.int32, funs: List[Any], *args):
+def switch(funs: typing.List, i: jnp.int32, *args) -> typing.Any:
     """
     Return `funs[i](*args)`
     """
@@ -70,6 +81,6 @@ def switch(i: jnp.int32, funs: List[Any], *args):
     return jax.lax.cond(
         i >= len(funs) - 1,
         lambda _: f(*args),
-        lambda _: switch(i, funs[:-1], *args),
+        lambda _: switch(funs[:-1], i, *args),
         None,
     )

@@ -1,9 +1,12 @@
 import jax
 import jax.numpy as jnp
 
+from ..utils import PytreeDict, PRNGKey
+from .state import ProcessState, ProcessStateData
+
 
 class OperationBase:
-    def prepare_state_pytrees(self, state):
+    def prepare_state_pytrees(self, state: ProcessState):
         """
         Prepare the (freshly created) state pytrees to be ready for this op.
 
@@ -13,7 +16,14 @@ class OperationBase:
         """
         pass
 
-    def update_edge(self, rng_key, params, edge, from_node, to_node):
+    def update_edge(
+        self,
+        rng_key: PRNGKey,
+        params: PytreeDict,
+        edge: PytreeDict,
+        from_node: PytreeDict,
+        to_node: PytreeDict,
+    ) -> (PytreeDict, PytreeDict, PytreeDict):
         """
         Compute and return the edge update keys and messages to from_node and to_node.
 
@@ -28,7 +38,14 @@ class OperationBase:
         """
         return {}, {}, {}
 
-    def update_node(self, rng_key, params, node, in_edges, out_edges):
+    def update_node(
+        self,
+        rng_key: PRNGKey,
+        params: PytreeDict,
+        node: PytreeDict,
+        in_edges: PytreeDict,
+        out_edges: PytreeDict,
+    ) -> PytreeDict:
         """
         Compute and return the node update items.
 
@@ -45,12 +62,18 @@ class OperationBase:
         """
         return {}
 
-    def update_params_and_record(self, rng_key, state, new_nodes, new_edges):
+    def update_params_and_record(
+        self,
+        rng_key: PRNGKey,
+        old_state: ProcessStateData,
+        updated_nodes: PytreeDict,
+        updated_edges: PytreeDict,
+    ) -> (PytreeDict, PytreeDict):
         """
         Compute and return the param updates and any records.
 
         Return `(param_updates_pytree, record_pytree)`.
-        Must always return the same key sets!
-        Must be JIT-able.
+        Must always return the same key sets. Must be JIT-able.
+        `updated_nodes' and `updated_edges` include teporary underscored items.
         """
         return {}, {}

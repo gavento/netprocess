@@ -16,7 +16,10 @@ log = logging.getLogger(__name__)
 
 class NetworkProcess:
     def __init__(self, operations):
+        from .operation import OperationBase
+
         self.operations = tuple(operations)
+        assert all(isinstance(op, OperationBase) for op in self.operations)
         self._run_jit = jax.jit(self._run)
 
     def __repr__(self):
@@ -98,7 +101,9 @@ class NetworkProcess:
             # Get neutral value of the op from the op on an empty array
             zval = agg_base(jnp.array((), dtype=e_vals.dtype))
             # Array of neutral values
-            z = jnp.full((state.n,) + e_vals.shape[1:], zval, dtype=e_vals.dtype)
+            z = jnp.full(
+                state.nodes_pytree["i"].shape + e_vals.shape[1:], zval, dtype=zval.dtype
+            )
             e_endpoints_exp = jnp.expand_dims(e_endpoints, 1)
             dims = jax.lax.ScatterDimensionNumbers(
                 tuple(range(1, len(e_vals.shape))), (0,), (0,)

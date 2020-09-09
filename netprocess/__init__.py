@@ -1,1 +1,1 @@
-from . import primitives, utils, networks, seir
+from . import network_process, jax_utils, networks, utils

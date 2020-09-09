@@ -1,12 +1,13 @@
 import typing
 
 import jax.numpy as jnp
-import jax
 
-ArrayDict = typing.Dict[str, jnp.ndarray]
+Pytree = typing.Any
+PytreeDict = typing.Dict[str, typing.Any]
+PRNGKey = jnp.ndarray
 
 
-def update_dict_disjoint(d, update):
+def update_dict_disjoint(d: dict, update: dict):
     """Update dictionary in-place, raise ValueError on key conflict."""
     for k, v in update.items():
         if k in d:
@@ -14,7 +15,7 @@ def update_dict_disjoint(d, update):
         d[k] = v
 
 
-def update_dict_present(d, update):
+def update_dict_present(d: dict, update: dict):
     """Update dictionary in-place, raise ValueError on new key."""
     for k, v in update.items():
         if k not in d:
@@ -22,9 +23,10 @@ def update_dict_present(d, update):
         d[k] = v
 
 
-def is_integer(x):
+def is_integer(x) -> bool:
+    """Is `x` a simple integer - an `int` or ()-shaped ndarray?"""
     if isinstance(x, int):
         return True
     if isinstance(x, jnp.ndarray):
-        return jnp.issubdtype(x.dtype, jnp.integer)
+        return jnp.issubdtype(x.dtype, jnp.integer) and x.shape == ()
     return False

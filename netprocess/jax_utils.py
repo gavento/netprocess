@@ -26,6 +26,15 @@ def ensure_pytree(pt: Pytree, dtype=None, ensure_dict=True) -> Pytree:
     return jax.tree_util.tree_map(lambda a: ensure_array(a, dtype=dtype), pt)
 
 
+def tree_copy(pytree):
+    """
+    Return a copy of the given pytree.
+
+    Note that structure is copied, leaves are not (as they are immutable).
+    """
+    return jax.tree_util.tree_map(lambda x: x, pytree)
+
+
 def concatenate_pytrees(
     pytrees: typing.Iterable[Pytree], check_treedefs: bool = True, axis=0
 ) -> Pytree:

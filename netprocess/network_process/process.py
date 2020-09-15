@@ -34,30 +34,21 @@ class NetworkProcess:
             state_update, records = self._run(state_data, steps_array)
         return state.copy_updated(state_update, [records])
 
-    def warmup_jit(self, n=16, block=True):
+    def warmup_jit(self, state=None, n=None, m=None, block=True):
         """Force the compilation of the JITted run function and wait for it (if `block`)."""
-        assert n >= 2
-        state = self.new_state([[0, 1], [1, 0]], n=n, seed=42)
+        if state is None:
+            assert n >= 2 and m >= 1
+            state = self.new_state([[0, 1]] * m, n=n, seed=42)
+        else:
+            assert n is None and m is None
         # Run the jitted function
-        t0 = time.time()
-        new_state = self.run(state, 1)
+        new_state = self.run(state, steps=1)
         # Wait for all computations
         if block:
-            for pytree in [
-                new_state.all_records(),
-                new_state.params_pytree,
-                new_state.nodes_pytree,
-                new_state.edges_pytree,
-            ]:
-                for a in jax.tree_util.tree_leaves(pytree):
-                    a.block_until_ready()
-            t1 = time.time()
-            log.debug(f"Warmup of {self} (n={n}) took {t1-t0:.2f}s")
+            new_state.block_on_all()
 
     def _run(self, state: ProcessStateData, steps_array: jnp.int32):
         """Returns (new_state, all_records_pytree). JIT-able."""
-        print("_run retraced with")
-        print(state)
         return jax.lax.scan(lambda s, _: self._run_step(s), state, steps_array)
 
     def _run_step(self, state: ProcessStateData):

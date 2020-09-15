@@ -155,6 +155,17 @@ class ProcessState:
             m=self.m,
         )
 
+    def block_on_all(self):
+        """
+        Block until all arrays are actually computed (does not copy them to CPU).
+        """
+        for pt in (self.params_pytree, self.edges_pytree, self.nodes_pytree):
+            for v in jax.tree_util.tree_leaves(pt):
+                v.block_until_ready()
+        if len(self._record_chunks) > 0:
+            for v in jax.tree_util.tree_leaves(self._record_chunks[-1]):
+                v.block_until_ready()
+
 
 def _filter_check_merge(orig: PytreeDict, update: PytreeDict, name: str):
     "Merge `update` items into a copy of `orig`, skip underscored, check existence."

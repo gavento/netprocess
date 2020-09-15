@@ -1,4 +1,5 @@
 import logging
+import time
 
 import click
 import tqdm
@@ -7,7 +8,7 @@ import jax
 import networkx as nx
 from jax import lax
 from jax import numpy as jnp
-from netprocess import networks, seir
+from netprocess import epi, network_process, networks, utils
 
 from .cli import cli
 
@@ -15,73 +16,40 @@ log = logging.getLogger(__name__)
 
 
 @cli.command()
-@click.option("-N", default=1000)
-@click.option("-K", default=3)
-@click.option("-s", "--steps", default=1000)
 @click.option("-b", "--edge_beta", default=0.05)
 @click.option("-g", "--gamma", default=0.07)
-def bench_sir2(n, k, steps, edge_beta, gamma):
+def bench_sir(edge_beta, gamma):
 
-    for _ in tqdm.trange(1, desc="create graph"):
-        g = nx.random_graphs.barabasi_albert_graph(n, k)
-        log.info(
-            f"Graph: n={g.order()}, m={g.size()}, avg_deg={2 * g.size() / g.order()}"
-        )
-    for _ in tqdm.trange(1, desc="edge list"):
-        edges = networks.nx_graph_to_edges(g)
+    np = network_process.NetworkProcess([epi.SIRUpdateOperation()])
+    params = {"edge_beta": edge_beta, "gamma": gamma}
 
-    nd = {
-        "state": jnp.zeros(n, dtype=jnp.int32),
-        "time": jnp.zeros(n, dtype=jnp.int32),
-        "infected": jnp.zeros(n, dtype=jnp.int32),
-    }
-    nd["state"] = jax.ops.index_update(nd["state"], n // 2, 1)
-
-    update = seir.build_sir_update(
-        edge_beta, gamma, count_time=True, count_infected=True
-    )
-
-    seir.run_compartment_process(
-        update,
-        steps,
-        [1] + [0] * (n - 1),
-        edges,
-        log_every=max(steps // 20, 1),
-        states=("S", "I", "R"),
-    )
-
-
-@cli.command()
-@click.option("-N", default=1000)
-@click.option("-K", default=3)
-@click.option("-s", "--steps", default=1000)
-@click.option("-b", "--edge_beta", default=0.05)
-@click.option("-g", "--gamma", default=0.07)
-def bench_sir(n, k, steps, edge_beta, gamma):
-    rng = jax.random.PRNGKey(42)
-
-    for _ in tqdm.trange(1, desc="create graph"):
-        g = nx.random_graphs.barabasi_albert_graph(n, k)
-        log.info(
-            f"Graph: n={g.order()}, m={g.size()}, avg_deg={2 * g.size() / g.order()}"
-        )
-    for _ in tqdm.trange(1, desc="edge list"):
-        edges = networks.nx_graph_to_edges(g)
-
-    node_states = jnp.zeros(n, dtype=jnp.int32)
-    node_states = jax.ops.index_update(node_states, 0, 1)
-
-    for _ in tqdm.trange(1, desc="build update function"):
-        upf = seir.build_sir_update_function(edge_beta, gamma)
-    for _ in tqdm.trange(1, desc="JIT"):
-        upf_jit = jax.jit(upf)
-        upf_jit(rng, edges, node_states)[0]
-
-    for i in tqdm.trange(steps, desc="SIR steps"):
-        if i % max(steps // 50, 1) == 0:
-            counts = jnp.sum(jax.nn.one_hot(node_states, 3), axis=0) / n
+    for n in [100, 10000, 1000000]:
+        for k in [3, 10]:
             log.info(
-                f"Step {i:-4d}   S: {counts[0]:.3f}   I: {counts[1]:.3f}   R: {counts[2]:.3f}"
+                f"Network: Barabasi-Albert. n={n}, k={k}, cca {n*k*2:.2e} directed edges"
             )
-        rng2, rng = jax.random.split(rng)
-        node_states = upf_jit(rng2, edges, node_states)
+            with utils.logged_time("  Creating graph"):
+                g = nx.random_graphs.barabasi_albert_graph(n, k)
+            with utils.logged_time("  Creating state"):
+                state = np.new_state(g, params_pytree=params, seed=42)
+            with utils.logged_time("  Warming up JIT"):
+                np.warmup_jit(state)
+            with utils.logged_time("  One iteration"):
+                state2 = np.run(state)
+                state2.block_on_all()
+            for steps in [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000]:
+                state2 = np.run(state, steps=steps)
+                state2.block_on_all()
+                t0 = time.time()
+                state2 = np.run(state, steps=steps)
+                state2.block_on_all()
+                t1 = time.time()
+                log.info(f"    {steps} took {t1-t0:.3g} s")
+
+                if t1 - t0 > 0.5:
+                    break
+            sps = steps / (t1 - t0)
+            log.info(
+                f"  {steps} steps took {t1-t0:.2g} s,  {sps:.3g} steps/s,  "
+                + f"{sps*state.m:.3g} edge_ops/s,  {sps * state.n:.3g} node_ops/s"
+            )

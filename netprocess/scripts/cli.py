@@ -28,5 +28,5 @@ def cli(debug):
         )
     )
     logger = colorlog.getLogger()
-    logger.addHandler(handler)
+    logger.handlers = [handler]
     logger.setLevel(level=logging.DEBUG if debug else logging.INFO)

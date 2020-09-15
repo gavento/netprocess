@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from .. import jax_utils
-
+from ..utils import PytreeDict
 
 ProcessStateData = collections.namedtuple(
     "ProcessStateData",
@@ -28,51 +28,71 @@ class ProcessState:
         params_pytree={},
         nodes_pytree={},
         edges_pytree={},
-        _record_chunks=(),
+        record_chunks=(),
         process=None,
     ):
         self.rng_key = rng_key
-        # Data
-        self.edges = jax_utils.ensure_array(edges)
-        self.params_pytree = jax_utils.ensure_pytree(params_pytree)
-        self.nodes_pytree = jax_utils.ensure_pytree(nodes_pytree)
-        self.edges_pytree = jax_utils.ensure_pytree(edges_pytree)
+        # Data - converted to ndarrays in _ensure_ndarrays()
+        self.edges = edges
+        self.params_pytree = params_pytree
+        self.nodes_pytree = nodes_pytree
+        self.edges_pytree = edges_pytree
         # Data sizes
         self.n = jnp.array(n, dtype=jnp.int32)
         self.params_pytree.setdefault("n", self.n)
         self.m = jnp.array(self.edges.shape[0], dtype=jnp.int32)
         self.params_pytree.setdefault("m", self.m)
+        self._ensure_ndarrays()
         # Ensure nodes and edges have numbers
         if "i" not in self.edges_pytree:
             self.edges_pytree["i"] = jnp.arange(self.m, dtype=jnp.int32)
         if "i" not in self.nodes_pytree:
             self.nodes_pytree["i"] = jnp.arange(self.n, dtype=jnp.int32)
-        # Optional Process reference
-        self.process = process
+        # Optional NetworkProcess reference
+        self._process = process
         # Chunked stats records
-        self._record_chunks = list(_record_chunks)
+        self._record_chunks = list(record_chunks)
         self._check_data()
 
-    def copy_updated(self, sd: ProcessStateData, new_records=()):
+    def _ensure_ndarrays(self):
+        "Ensure all the data and pytrees are ndarrays."
+        self.edges = jax_utils.ensure_array(self.edges, dtype=jnp.int32)
+        self.m = jax_utils.ensure_array(self.m, dtype=jnp.int32)
+        self.n = jax_utils.ensure_array(self.n, dtype=jnp.int32)
+        self.params_pytree = jax_utils.ensure_pytree(self.params_pytree)
+        self.nodes_pytree = jax_utils.ensure_pytree(self.nodes_pytree)
+        self.edges_pytree = jax_utils.ensure_pytree(self.edges_pytree)
+
+    def copy_updated(self, new_state: ProcessStateData, new_records=()):
         """
-        Return a copy of self updated with ProcessStateData.
+        Return a copy of self updated with given ProcessStateData.
+
+        Filters out underscored pytree entries of the update and checks
+        that the updated pytree elements (top-level ones) exist in old state.
 
         `new_records` is an iterable of `record_pytree`s.
-        Note that m, n and edges should stay the same.
+        Note that state `m`, `n` and `edges` must stay the same.
         """
-        assert isinstance(sd, ProcessStateData)
+
+        assert isinstance(new_state, ProcessStateData)
         assert self.__class__ == ProcessState
-        assert self.n == sd.n
-        assert self.m == sd.m
+        assert self.n == new_state.n
+        assert self.m == new_state.m
         return ProcessState(
-            rng_key=sd.rng_key,
-            n=sd.n,
-            edges=sd.edges,
-            params_pytree=jax.tree_util.tree_map(lambda x: x, sd.params_pytree),
-            nodes_pytree=jax.tree_util.tree_map(lambda x: x, sd.nodes_pytree),
-            edges_pytree=jax.tree_util.tree_map(lambda x: x, sd.edges_pytree),
-            _record_chunks=list(self._record_chunks) + list(new_records),
-            process=self.process,
+            rng_key=new_state.rng_key,
+            n=new_state.n,
+            edges=new_state.edges,
+            params_pytree=_filter_check_merge(
+                self.params_pytree, new_state.params_pytree, "params_pytree"
+            ),
+            nodes_pytree=_filter_check_merge(
+                self.nodes_pytree, new_state.nodes_pytree, "nodes_pytree"
+            ),
+            edges_pytree=_filter_check_merge(
+                self.edges_pytree, new_state.edges_pytree, "edges_pytree"
+            ),
+            record_chunks=list(self._record_chunks) + list(new_records),
+            process=self._process,
         )
 
     def _check_data(self):
@@ -87,7 +107,7 @@ class ProcessState:
             assert a.shape[0] == self.m
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} N={self.n} M={self.m} records={self.count_records()} process={self.process}>"
+        return f"<{self.__class__.__name__} N={self.n} M={self.m} records={self.count_records()} process={self._process}>"
 
     def count_records(self):
         if len(self._record_chunks) == 0:
@@ -134,3 +154,16 @@ class ProcessState:
             n=self.n,
             m=self.m,
         )
+
+
+def _filter_check_merge(orig: PytreeDict, update: PytreeDict, name: str):
+    "Merge `update` items into a copy of `orig`, skip underscored, check existence."
+    update = {k: v for k, v in update.items() if not k.startswith("_")}
+    tgt = jax_utils.tree_copy(orig)
+    for k, v in update.items():
+        if k not in orig:
+            raise ValueError(
+                f"Key {k} of {name} update not present in orig: {list(orig.keys())}"
+            )
+        tgt[k] = jax_utils.tree_copy(v)
+    return tgt

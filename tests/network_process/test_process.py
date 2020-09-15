@@ -8,13 +8,13 @@ def _new_state(process):
     n = 4
     return process.new_state(
         jnp.array([(0, 2), (2, 1), (2, 3), (0, 1), (1, 0)]),
-        n=4,
+        n=n,
         seed=42,
         nodes_pytree={
             "x": jnp.array([[1, 2], [3, 4], [5, 6], [7, 8]]),
             "y": jnp.array([0.1, 0.2, 0.3, 0.4]),
-            "indeg": jnp.zeros(4, dtype=jnp.int32),
-            "outdeg": jnp.zeros(4, dtype=jnp.int32),
+            "indeg": jnp.zeros(n, dtype=jnp.int32),
+            "outdeg": jnp.zeros(n, dtype=jnp.int32),
         },
         edges_pytree={
             "aa": jnp.array([1.0, 2.0, 3.0, 4.0, 5.0]),
@@ -25,16 +25,15 @@ def _new_state(process):
 
 def test_nop_process():
     np = network_process.NetworkProcess([network_process.OperationBase()])
-    np.warmup()
 
     np.new_state([(0, 1), (1, 2)], n=3)
 
     sa0 = np.new_state(nx.complete_graph(4), seed=32, params_pytree={"beta": 1.5})
-    sa1 = np.run(sa0, steps=4)
+    sa1 = np.run(sa0, steps=4, jit=False)
     assert sa1.params_pytree["beta"] == 1.5
 
     sb0 = _new_state(np)
-    sb1 = np.run(sb0, steps=1)
+    sb1 = np.run(sb0, steps=1, jit=False)
     for xpt, ypt in (
         (sb0.nodes_pytree, sb1.nodes_pytree),
         (sb0.edges_pytree, sb1.edges_pytree),
@@ -45,12 +44,12 @@ def test_nop_process():
             assert (x == y).all()
 
 
-def test_message_process():
+def test_custom_process():
     # Full message passing
     class TestOp(network_process.OperationBase):
         def update_edge(self, rng_key, params, edge, from_node, to_node):
             return (
-                {"aa": edge["aa"] + from_node["y"]},
+                {"aa": edge["aa"] + from_node["y"], "_nope": 1},
                 {"other": to_node["x"], "deg": 1},
                 {"other": from_node["x"], "deg": 1},
             )
@@ -67,6 +66,7 @@ def test_message_process():
                 ),
                 "indeg": in_edges["sum"]["deg"],
                 "outdeg": out_edges["sum"]["deg"],
+                "_nope": 0,
             }
 
     np = network_process.NetworkProcess([TestOp()])
@@ -80,3 +80,6 @@ def test_message_process():
     assert (sb1.nodes_pytree["y"] == jnp.array([100.1, 287.2, 100.3, 227.4])).all()
     assert (sb1.edges_pytree["stat"] == sb1.edges_pytree["stat"]).all()
     assert (sb1.edges_pytree["aa"] == jnp.array([1.1, 2.3, 3.3, 4.1, 5.2])).all()
+    # Check underscored are ommited
+    assert "_nope" not in sb1.nodes_pytree
+    assert "_nope" not in sb1.edges_pytree

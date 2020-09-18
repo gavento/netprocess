@@ -48,30 +48,33 @@ def test_custom_process():
     # Full message passing
     class TestOp(network_process.OperationBase):
         def update_edge(self, rng_key, params, edge, from_node, to_node):
-            return (
-                {"aa": edge["aa"] + from_node["y"], "_nope": 1},
-                {"other": to_node["x"], "deg": 1},
-                {"other": from_node["x"], "deg": 1},
-            )
+            return {
+                "aa": edge["aa"] + from_node["y"],
+                "_nope": 1,
+                "_tgt_x": to_node["x"],
+                "_src_x": from_node["x"],
+                "_deg": 1,
+            }
 
         def update_node(self, rng_key, params, node, in_edges, out_edges):
             return {
-                "x": in_edges["sum"]["other"],
+                "x": in_edges["sum"]["_src_x"],
                 "y": node["y"]
                 + jax.lax.cond(
-                    out_edges["sum"]["deg"] >= 2,
+                    out_edges["sum"]["_deg"] >= 2,
                     lambda _: 100.0,
                     lambda _: jnp.float32(jax.random.randint(rng_key, (), 200, 300)),
                     None,
                 ),
-                "indeg": in_edges["sum"]["deg"],
-                "outdeg": out_edges["sum"]["deg"],
+                "indeg": in_edges["sum"]["_deg"],
+                "outdeg": out_edges["sum"]["_deg"],
                 "_nope": 0,
             }
 
     np = network_process.NetworkProcess([TestOp()])
     sb0 = _new_state(np)
     sb1 = np.run(sb0, steps=1)
+    print(np.trace_log())
 
     assert (sb1.nodes_pytree["indeg"] == jnp.array([1, 2, 1, 1])).all()
     assert (sb1.nodes_pytree["outdeg"] == jnp.array([2, 1, 2, 0])).all()

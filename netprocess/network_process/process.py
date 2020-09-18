@@ -20,7 +20,9 @@ class NetworkProcess:
 
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
-        self._run_jit = jax.jit(self._run)
+        self._run_jit = jax.jit(self._run, static_argnums=[2])
+        self._traced = 0
+        self._trace_log = []
 
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.operations}>"
@@ -29,10 +31,15 @@ class NetworkProcess:
         steps_array = jnp.zeros((steps, 1))
         state_data = state.as_pytree()
         if jit:
-            state_update, records = self._run_jit(state_data, steps_array)
+            state_update, records = self._run_jit(state_data, steps_array, True)
         else:
-            state_update, records = self._run(state_data, steps_array)
+            state_update, records = self._run(state_data, steps_array, False)
         return state.copy_updated(state_update, [records])
+
+    def trace_log(self):
+        return f"Traced {self._traced} times, last log:\n" + (
+            "\n".join(self._trace_log)
+        )
 
     def warmup_jit(self, state=None, n=None, m=None, block=True):
         """Force the compilation of the JITted run function and wait for it (if `block`)."""
@@ -47,16 +54,25 @@ class NetworkProcess:
         if block:
             new_state.block_on_all()
 
-    def _run(self, state: ProcessStateData, steps_array: jnp.int32):
+    def _run(self, state: ProcessStateData, steps_array: jnp.int32, tracing: bool):
         """Returns (new_state, all_records_pytree). JIT-able."""
-        return jax.lax.scan(lambda s, _: self._run_step(s), state, steps_array)
+        if tracing:
+            self._traced += 1
+            self._trace_log = []
+        log.debug(
+            f"Tracing {self} with n={state.n}, m={state.m}, steps={len(steps_array)}"
+        )
+        return jax.lax.scan(
+            lambda s, _: self._run_step(s, tracing=tracing), state, steps_array
+        )
 
-    def _run_step(self, state: ProcessStateData):
+    def _run_step(self, state: ProcessStateData, tracing=False):
         """Returns (new_state, record_pytree). JIT-able."""
 
         # Randomness - split into new key, forget the old one
         step_rng_key, new_rng_key = jax.random.split(state.rng_key)
         state = state._replace(rng_key=None)
+        orig_state = state
 
         # Step 1: Extract node values for edge endpoints
         n2e_from_pytree = jax.tree_util.tree_map(
@@ -65,29 +81,41 @@ class NetworkProcess:
         n2e_to_pytree = jax.tree_util.tree_map(
             lambda a: a[state.edges[:, 1]], state.nodes_pytree
         )
-        # n2e_to_dict = {k: nodes_dict[k][e_to] for k in nodes_dict}
+
+        if tracing:
+            self._trace_log.append(
+                f"Param keys: {', '.join(state.params_pytree.keys())}"
+            )
+            self._trace_log.append(
+                f"Node keys:  {', '.join(state.nodes_pytree.keys())}"
+            )
+            self._trace_log.append(
+                f"Edge keys:  {', '.join(state.edges_pytree.keys())}"
+            )
 
         # Step 2: Compute edge operations and messages
         def edge_f(shared_rng_key, params, e_pt, from_pt, to_pt):
             "Apply all operations on each edge"
-            e_up, from_up, to_up = {}, {}, {}
+            e_pt = e_pt.copy()
             rng_key = jax.random.fold_in(shared_rng_key, e_pt["i"])
             for i, op in enumerate(self.operations):
                 r = jax.random.fold_in(rng_key, i)
                 updates = op.update_edge(r, params, e_pt, from_pt, to_pt)
-                for tgt, up in zip([e_up, from_up, to_up], updates):
-                    utils.update_dict_disjoint(tgt, up)
-            return e_up, from_up, to_up
+                if updates and tracing:
+                    self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+                e_pt.update(updates)
+            return e_pt
 
-        edge_update_pytree, e2n_from_pytree, e2n_to_pytree = jax.vmap(
-            edge_f, in_axes=(None, None, 0, 0, 0)
-        )(
+        if tracing:
+            self._trace_log.append("Edge updates:")
+        new_edges_pytree = jax.vmap(edge_f, in_axes=(None, None, 0, 0, 0))(
             jax.random.fold_in(step_rng_key, 0),
             state.params_pytree,
             state.edges_pytree,
             n2e_from_pytree,
             n2e_to_pytree,
         )
+        state = state._replace(edges_pytree=new_edges_pytree)
 
         # Step 3: Compute edge-to-node value aggregates
         def scatter_op(agg_op, agg_base, e_vals, e_endpoints):
@@ -113,7 +141,7 @@ class NetworkProcess:
         ):
             in_edges_agg[agg_name] = jax.tree_util.tree_map(
                 lambda a: scatter_op(agg_op, agg_base, a, state.edges[:, 1]),
-                e2n_to_pytree,
+                new_edges_pytree,
             )
             out_edges_agg[agg_name] = jax.tree_util.tree_map(
                 lambda a: scatter_op(
@@ -122,55 +150,77 @@ class NetworkProcess:
                     a,
                     state.edges[:, 0],
                 ),
-                e2n_from_pytree,
+                new_edges_pytree,
             )
 
         # Step 4: Compute node operations and updates
         def node_f(shared_rng_key, params, n_pt, in_edges_agg, out_edges_agg):
             "Apply all operations on each node"
-            n_up = {}
+            n_pt = n_pt.copy()
             rng_key = jax.random.fold_in(shared_rng_key, n_pt["i"])
             for i, op in enumerate(self.operations):
                 r = jax.random.fold_in(rng_key, i)
-                update = op.update_node(r, params, n_pt, in_edges_agg, out_edges_agg)
-                utils.update_dict_disjoint(n_up, update)
-            return n_up
+                updates = op.update_node(r, params, n_pt, in_edges_agg, out_edges_agg)
+                if updates and tracing:
+                    self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+                n_pt.update(updates)
+            return n_pt
 
-        node_update_pytree = jax.vmap(node_f, in_axes=(None, None, 0, 0, 0))(
+        if tracing:
+            self._trace_log.append("Node updates:")
+        new_nodes_pytree = jax.vmap(node_f, in_axes=(None, None, 0, 0, 0))(
             jax.random.fold_in(step_rng_key, 1),
             state.params_pytree,
             state.nodes_pytree,
             in_edges_agg,
             out_edges_agg,
         )
+        state = state._replace(nodes_pytree=new_nodes_pytree)
 
-        # Step 5: Compute param updates and records
-        param_update_pytree, records = {}, {}
+        # Step 5: Compute param updates
+        if tracing:
+            self._trace_log.append("Param updates:")
+        new_params_pytree = state.params_pytree.copy()
         for op in self.operations:
-            updates = op.update_params_and_record(
+            updates = op.update_params(
                 jax.random.fold_in(step_rng_key, 2),
                 state,
-                node_update_pytree,
-                edge_update_pytree,
+                orig_state,
             )
-            utils.update_dict_disjoint(param_update_pytree, updates[0])
-            utils.update_dict_disjoint(records, updates[1])
+            if updates and tracing:
+                self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+            new_params_pytree.update(updates)
+        state = state._replace(params_pytree=new_params_pytree)
+
+        # Step 6: Create any records
+        if tracing:
+            self._trace_log.append("Creating records:")
+        records = {}
+        for op in self.operations:
+            updates = op.create_record(
+                jax.random.fold_in(step_rng_key, 2),
+                state,
+                orig_state,
+            )
+            if updates and tracing:
+                self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+            records.update(updates)
 
         # Create the new state, filtering underlines and checking
         # that we only update existing keys
-        new_state = state._replace(
+        state = state._replace(
             rng_key=new_rng_key,
             params_pytree=_filter_check_merge(
-                state.params_pytree, param_update_pytree, "params"
+                orig_state.params_pytree, state.params_pytree, "params"
             ),
             nodes_pytree=_filter_check_merge(
-                state.nodes_pytree, node_update_pytree, "node"
+                orig_state.nodes_pytree, state.nodes_pytree, "node"
             ),
             edges_pytree=_filter_check_merge(
-                state.edges_pytree, edge_update_pytree, "edge"
+                orig_state.edges_pytree, state.edges_pytree, "edge"
             ),
         )
-        return new_state, [records]
+        return state, [records]
 
     def new_state(
         self,

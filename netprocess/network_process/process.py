@@ -74,6 +74,15 @@ class NetworkProcess:
         state = state._replace(rng_key=None)
         orig_state = state
 
+        accessed = set()
+
+        def tdict(d, l):
+            "Helper to wrap dicts in tracing dict"
+            if tracing:
+                return utils.TracingDict(d, accessed, f"{l}[", "]")
+            else:
+                return d
+
         # Step 1: Extract node values for edge endpoints
         n2e_from_pytree = jax.tree_util.tree_map(
             lambda a: a[state.edges[:, 0]], state.nodes_pytree
@@ -100,9 +109,18 @@ class NetworkProcess:
             rng_key = jax.random.fold_in(shared_rng_key, e_pt["i"])
             for i, op in enumerate(self.operations):
                 r = jax.random.fold_in(rng_key, i)
-                updates = op.update_edge(r, params, e_pt, from_pt, to_pt)
+                accessed.clear()
+                updates = op.update_edge(
+                    r,
+                    tdict(params, "P"),
+                    tdict(e_pt, "E"),
+                    tdict(from_pt, "fromN"),
+                    tdict(to_pt, "toN"),
+                )
                 if updates and tracing:
-                    self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+                    self._trace_log.append(
+                        f"  {op}: {', '.join(sorted(accessed))} -> {', '.join(updates.keys())}"
+                    )
                 e_pt.update(updates)
             return e_pt
 
@@ -160,9 +178,20 @@ class NetworkProcess:
             rng_key = jax.random.fold_in(shared_rng_key, n_pt["i"])
             for i, op in enumerate(self.operations):
                 r = jax.random.fold_in(rng_key, i)
-                updates = op.update_node(r, params, n_pt, in_edges_agg, out_edges_agg)
+                accessed.clear()
+                in_edges_agg = {
+                    k: tdict(v, f"inE[{k}]") for k, v in in_edges_agg.items()
+                }
+                out_edges_agg = {
+                    k: tdict(v, f"outE[{k}]") for k, v in out_edges_agg.items()
+                }
+                updates = op.update_node(
+                    r, tdict(params, "P"), tdict(n_pt, "N"), in_edges_agg, out_edges_agg
+                )
                 if updates and tracing:
-                    self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+                    self._trace_log.append(
+                        f"  {op}: {', '.join(sorted(accessed))} -> {', '.join(updates.keys())}"
+                    )
                 n_pt.update(updates)
             return n_pt
 
@@ -188,7 +217,7 @@ class NetworkProcess:
                 orig_state,
             )
             if updates and tracing:
-                self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+                self._trace_log.append(f"  {op}: ? -> {', '.join(updates.keys())}")
             new_params_pytree.update(updates)
         state = state._replace(params_pytree=new_params_pytree)
 
@@ -203,7 +232,7 @@ class NetworkProcess:
                 orig_state,
             )
             if updates and tracing:
-                self._trace_log.append(f"  {op} -> {', '.join(updates.keys())}")
+                self._trace_log.append(f"  {op}: ? -> {', '.join(updates.keys())}")
             records.update(updates)
 
         # Create the new state, filtering underlines and checking

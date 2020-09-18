@@ -63,10 +63,7 @@ class OperationBase:
         return {}
 
     def update_params(
-        self,
-        rng_key: PRNGKey,
-        state: ProcessStateData,
-        orig_state: ProcessStateData,
+        self, rng_key: PRNGKey, state: ProcessStateData, orig_state: ProcessStateData
     ) -> PytreeDict:
         """
         Compute and return the param updates.
@@ -78,10 +75,7 @@ class OperationBase:
         return {}
 
     def create_record(
-        self,
-        rng_key: PRNGKey,
-        state: ProcessStateData,
-        orig_state: ProcessStateData,
+        self, rng_key: PRNGKey, state: ProcessStateData, orig_state: ProcessStateData
     ) -> PytreeDict:
         return {}
         """

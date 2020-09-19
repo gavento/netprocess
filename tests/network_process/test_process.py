@@ -71,6 +71,12 @@ def test_custom_process():
                 "_nope": 0,
             }
 
+        def update_params(self, rng_key, state, orig_state):
+            return {"_a": jnp.sum(state.nodes_pytree["indeg"])}
+
+        def create_record(self, rng_key, state, orig_state):
+            return {"a_rec": state.params_pytree["_a"] * state.edges_pytree["aa"][0]}
+
     np = network_process.NetworkProcess([TestOp()])
     sb0 = _new_state(np)
     sb1 = np.run(sb0, steps=1)
@@ -83,6 +89,7 @@ def test_custom_process():
     assert (sb1.nodes_pytree["y"] == jnp.array([100.1, 287.2, 100.3, 227.4])).all()
     assert (sb1.edges_pytree["stat"] == sb1.edges_pytree["stat"]).all()
     assert (sb1.edges_pytree["aa"] == jnp.array([1.1, 2.3, 3.3, 4.1, 5.2])).all()
+    assert (sb1.all_records()["a_rec"] == jnp.array([5.5])).all()
     # Check underscored are ommited
     assert "_nope" not in sb1.nodes_pytree
     assert "_nope" not in sb1.edges_pytree

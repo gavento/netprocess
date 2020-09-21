@@ -16,6 +16,7 @@ networkx = "^2.4"
 jax = "^0.1.75"
 jaxlib = "^0.1.52"
 pre-commit = "^2.7.1"
+matplotlib = "^3.3.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.1"

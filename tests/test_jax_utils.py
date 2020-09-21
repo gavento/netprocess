@@ -8,7 +8,7 @@ from netprocess import jax_utils
 def test_jax_random_choice_range():
     """Ensure that random.choice normalizes the probabilities."""
     k = jax.random.PRNGKey(42)
-    s = jax.random.choice(k, 2, (1000,), p=[1000.0, 2000.0])
+    s = jax.random.choice(k, 2, (1000,), p=jnp.array([1000.0, 2000.0]))
     assert sum(s) < 900
     assert sum(s) > 300
 

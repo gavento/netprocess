@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 @click.option("-g", "--gamma", default=0.07)
 def bench_sir(edge_beta, gamma):
 
-    np = network_process.NetworkProcess([epi.SIRUpdateOperation()])
+    np = network_process.NetworkProcess([epi.SIRUpdateOp()])
     params = {"edge_beta": edge_beta, "gamma": gamma}
 
     for n in [100, 10000, 1000000]:

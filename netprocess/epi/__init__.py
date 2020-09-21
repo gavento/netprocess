@@ -1,1 +1,1 @@
-from .seir import SIRUpdateOperation
+from .seir import SIRUpdateOp

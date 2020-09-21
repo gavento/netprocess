@@ -13,13 +13,13 @@ jobs:
         with:
           python-version: 3.7
       - name: Install dependencies
-        run: python -m pip install --upgrade black
+        run: python -m pip install --upgrade black==20.8b1
       - name: Check with Black
         run: |
           echo $PWD
           black --version
-          black . --check --exclude get-poetry.py
           black . --diff --exclude get-poetry.py
+          black . --check --exclude get-poetry.py
 
   Test:
     needs: Linting

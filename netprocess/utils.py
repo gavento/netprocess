@@ -4,6 +4,7 @@ import time
 import typing
 
 import jax.numpy as jnp
+import jax
 
 Pytree = typing.Any
 PytreeDict = typing.Dict[str, typing.Any]
@@ -46,3 +47,30 @@ def logged_time(name, level=logging.INFO):
     yield
     t1 = time.time()
     log.log(level, f"{name} took {t1-t0:.3g} s")
+
+
+class TracingDict(dict):
+    """
+    Utility dict wrapper to track accessed keys.
+
+    Iteration is ignored.
+    """
+
+    def __init__(self, d: dict, target: set, prefix: str = "", suffix: str = ""):
+        super().__init__(d)
+        self._target = target
+        self._prefix = prefix
+        self._suffix = suffix
+
+    def _as_dict(self):
+        return dict(self.items())
+
+    def __getitem__(self, key):
+        r = super().__getitem__(key)
+        self._target.add(f"{self._prefix}{key!s}{self._suffix}")
+        return r
+
+
+# jax.tree_util.register_pytree_node(
+#    TracingDict, lambda td: ((td._as_dict(),), None), lambda _, d: d[0]
+# )

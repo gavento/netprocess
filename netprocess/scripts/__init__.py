@@ -1,1 +1,1 @@
-from . import cli, bench
+from . import cli, bench, epi_demo

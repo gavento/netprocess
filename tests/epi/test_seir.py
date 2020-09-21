@@ -17,9 +17,7 @@ def test_sir_model():
     assert sum(s.nodes_pytree["compartment"]) == 0
 
     # Infect a single high-degree node
-    s.nodes_pytree["compartment"] = jax.ops.index_update(
-        s.nodes_pytree["compartment"], 0, 1
-    )
+    s.nodes_pytree["compartment"] = jnp.array([1] + [0] * (s.n - 1))
 
     # Infection spread
     for i in range(5):

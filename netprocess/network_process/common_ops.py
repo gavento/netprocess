@@ -3,9 +3,10 @@ import jax.numpy as jnp
 
 from ..utils import PRNGKey, PytreeDict
 from .state import ProcessStateData
+from .operation import OperationBase
 
 
-class CountNodeStatesOp:
+class CountNodeStatesOp(OperationBase):
     def __init__(self, states: int, key: str = "state", dest: str = None):
         self.states = states
         self.key = key
@@ -20,10 +21,10 @@ class CountNodeStatesOp:
         counts = jnp.sum(
             jax.nn.one_hot(state.nodes_pytree[self.key], self.states), axis=0
         )
-        return {}, {self.dest: counts}
+        return {self.dest: counts}
 
 
-class CountNodeTransitionsOp:
+class CountNodeTransitionsOp(OperationBase):
     def __init__(self, states: int, key: str = "state", dest: str = None):
         self.states = states
         self.key = key

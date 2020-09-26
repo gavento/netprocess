@@ -4,6 +4,8 @@ import re
 
 import click
 import tqdm
+import plotly
+import plotly.graph_objects as go
 
 import jax
 import networkx as nx
@@ -18,7 +20,7 @@ from .cli import cli
 log = logging.getLogger(__name__)
 
 
-def prepare_plot(rs, nodes, serial_interval):
+def prepare_plot(rs, nodes, gamma):
     ever_infected = jnp.add(nodes, -rs["compartment_count"]._value[:, 0])
     ever_infected = jnp.divide(ever_infected, nodes)
 
@@ -27,7 +29,7 @@ def prepare_plot(rs, nodes, serial_interval):
     susceptible = rs["compartment_count"]._value[:, 0]
     susceptible_part = jnp.divide(susceptible, nodes)
 
-    r = serial_interval * jnp.divide(newly_infected[1:], jnp.multiply(infected[:-1], susceptible_part[:-1]))
+    r = newly_infected[1:] / (gamma * infected[:-1] * susceptible_part[:-1])
     return r, ever_infected
 
 
@@ -36,10 +38,10 @@ def prepare_plot(rs, nodes, serial_interval):
 @click.option("-g", "--gamma", default=0.07)
 @click.option("-I", "--infect", default=100)
 @click.option("-n", "--nodes", default=100000)
-@click.option("-si", "--serial_interval", default=4)
 @click.option("-steps", "--steps", default=100)
 @click.option("-k", "--k", default=3)
-def r_graph(edge_beta, gamma, infect, nodes, serial_interval, steps, k):
+@click.option("-pt", "--p_triangle", default=0.5)
+def r_graph(edge_beta, gamma, infect, nodes, serial_interval, steps, k, p_triangle):
     np = network_process.NetworkProcess(
         [
             epi.SIRUpdateOp(),
@@ -56,8 +58,8 @@ def r_graph(edge_beta, gamma, infect, nodes, serial_interval, steps, k):
         f"Network: Barabasi-Albert. n={nodes}, k={k}, cca {nodes*k*2:.2e} directed edges"
     )
     with utils.logged_time("  Creating graph"):
-        g = nx.random_graphs.barabasi_albert_graph(nodes, k)
-        g2 = nx.random_graphs.gnm_random_graph(nodes, nodes*k)
+        g = nx.random_graphs.powerlaw_cluster_graph(nodes, k, p_triangle) #nx.random_graphs.barabasi_albert_graph(nodes, k)
+        g2 = nx.random_graphs.random_regular_graph(2*k, nodes)#gnm_random_graph(nodes, nodes*k)
     with utils.logged_time("  Creating state"):
         state = np.new_state(g, params_pytree=params, seed=42)
         state2 = np.new_state(g2, params_pytree=params, seed=42)
@@ -74,18 +76,11 @@ def r_graph(edge_beta, gamma, infect, nodes, serial_interval, steps, k):
     rs = state.all_records()
     rs2 = state2.all_records()
 
-    r1, ever_infected1 = prepare_plot(rs, nodes, serial_interval)
-    r2, ever_infected2 = prepare_plot(rs2, nodes, serial_interval)
+    r1, ever_infected1 = prepare_plot(rs, nodes, gamma)
+    r2, ever_infected2 = prepare_plot(rs2, nodes, gamma)
 
-    plt.subplot(211, title='Barabasi-Albert', xlabel='% already infected', ylabel='R')
-    plt.plot(ever_infected1[:-1]*100, r1)
-
-    plt.subplot(212, title = "random_regular", xlabel='% already infected', ylabel='R')
-    plt.plot(ever_infected2[:-1] * 100, r2)
-
-    #plt.xlabel('% already infected')
-    #plt.ylabel('R')
-    #plt.title(name)
-    plt.savefig(name)
-    plt.show()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=ever_infected1[:-1]*100, y=r1, name="R1"))
+    fig.add_trace(go.Scatter(x=ever_infected2[:-1]*100, y=r2, name="R2"))
+    fig.show()
 

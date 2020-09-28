@@ -86,7 +86,7 @@ def test_custom_process():
     assert (sb1.nodes_pytree["outdeg"] == jnp.array([2, 1, 2, 0])).all()
     assert (sb1.nodes_pytree["x"] == jnp.array([[3, 4], [6, 8], [1, 2], [5, 6]])).all()
     # NB: this one depends on the RNG for reproducibility
-    assert (sb1.nodes_pytree["y"] == jnp.array([100.1, 287.2, 100.3, 227.4])).all()
+    assert (sb1.nodes_pytree["y"] == jnp.array([100.1, 298.2, 100.3, 285.4])).all()
     assert (sb1.edges_pytree["stat"] == sb1.edges_pytree["stat"]).all()
     assert (sb1.edges_pytree["aa"] == jnp.array([1.1, 2.3, 3.3, 4.1, 5.2])).all()
     assert (sb1.all_records()["a_rec"] == jnp.array([5.5])).all()

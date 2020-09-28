@@ -23,3 +23,5 @@ def test_sir_model():
     for i in range(5):
         s = np.run(s, steps=5)
         print(s.nodes_pytree["compartment"])
+
+    print(np.trace_log())

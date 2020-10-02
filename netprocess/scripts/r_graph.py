@@ -6,6 +6,7 @@ import click
 import tqdm
 import plotly
 import plotly.graph_objects as go
+import scipy.stats as st
 
 import jax
 import networkx as nx
@@ -33,6 +34,41 @@ def prepare_plot(rs, nodes, gamma):
     return r, ever_infected
 
 
+def make_simulation(np, g, comp, params, steps):
+    state = np.new_state(g, params_pytree=params, seed=42)
+    state.nodes_pytree["compartment"] = comp
+    state = np.run(state, steps=steps)
+    state.block_on_all()
+    rs = state.all_records()
+    return rs
+
+
+def interpolate(x_1, x_2, y, r_1, r_2):
+    t = (x_2 - y) / (x_2 - x_1)
+    r = t*r_1 + (1-t)*r_2
+    return r
+
+
+def aggregate_graphs(list_of_graphs):
+    union = sorted(list(set().union(*[list_of_graphs[i]["ever_infected"] for i in range(len(list_of_graphs))])))
+    new_graphs = []
+    new_r = [0] * len(union)
+    for graph in list_of_graphs:
+        j = 0
+        new_graph = [0] * len(union)
+        for i in range(len(union)):
+            while (graph["ever_infected"][j] < union[i]) and j < len(graph["ever_infected"])-1:
+                j += 1
+            if graph["ever_infected"][j] == union[i] or j == len(graph["ever_infected"])-1:
+                new_graph[i] = graph["r"][j]
+            else:
+                new_graph[i] = interpolate(graph["ever_infected"][j-1], graph["ever_infected"][j], union[i], graph["r"][j-1], graph["r"][j])
+        new_graphs.append({"r": new_graph, "ever_infected": union})
+    for i in range(len(union)):
+        new_r[i] = sum([new_graphs[j]["r"][i] / len(list_of_graphs) for j in range(len(new_graphs))])
+    return new_r, union, new_graphs
+
+
 @cli.command()
 @click.option("-b", "--edge_beta", default=0.05)
 @click.option("-g", "--gamma", default=0.07)
@@ -41,7 +77,8 @@ def prepare_plot(rs, nodes, gamma):
 @click.option("-steps", "--steps", default=100)
 @click.option("-k", "--k", default=3)
 @click.option("-pt", "--p_triangle", default=0.5)
-def r_graph(edge_beta, gamma, infect, nodes, serial_interval, steps, k, p_triangle):
+@click.option("-ci", "--confidence_interval", default=0.1)
+def r_graph(edge_beta, gamma, infect, nodes, steps, k, p_triangle, confidence_interval):
     np = network_process.NetworkProcess(
         [
             epi.SIRUpdateOp(),
@@ -50,37 +87,57 @@ def r_graph(edge_beta, gamma, infect, nodes, serial_interval, steps, k, p_triang
         ]
     )
     params = {"edge_beta": edge_beta, "gamma": gamma}
-    name = f"Barabasi-Albert_n={nodes}_k={k}_steps={steps}_SI={serial_interval}_infect={infect}_beta={params['edge_beta']}_gamma={params['gamma']}"
+    name = f"Barabasi-Albert_n={nodes}_k={k}_steps={steps}_infect={infect}_beta={params['edge_beta']}_gamma={params['gamma']}"
     name = re.sub('\.', ',', name)
 
 
     log.info(
         f"Network: Barabasi-Albert. n={nodes}, k={k}, cca {nodes*k*2:.2e} directed edges"
     )
-    with utils.logged_time("  Creating graph"):
-        g = nx.random_graphs.powerlaw_cluster_graph(nodes, k, p_triangle) #nx.random_graphs.barabasi_albert_graph(nodes, k)
-        g2 = nx.random_graphs.random_regular_graph(2*k, nodes)#gnm_random_graph(nodes, nodes*k)
-    with utils.logged_time("  Creating state"):
-        state = np.new_state(g, params_pytree=params, seed=42)
-        state2 = np.new_state(g2, params_pytree=params, seed=42)
-        rng = jax.random.PRNGKey(43)
-        comp = jnp.int32(jax.random.bernoulli(rng, infect / nodes, shape=[nodes]))
-        state.nodes_pytree["compartment"] = comp
-        state2.nodes_pytree["compartment"] = comp
-    with utils.logged_time("  Running model"):
-        state = np.run(state, steps=steps)
-        state2 = np.run(state2, steps=steps)
-        state.block_on_all()
-        state2.block_on_all()
-    log.info(np.trace_log())
-    rs = state.all_records()
-    rs2 = state2.all_records()
+    g = nx.random_graphs.powerlaw_cluster_graph(nodes, k, p_triangle) #nx.random_graphs.barabasi_albert_graph(nodes, k)
+    g2 = nx.random_graphs.random_regular_graph(2*k, nodes)#gnm_random_graph(nodes, nodes*k)
 
-    r1, ever_infected1 = prepare_plot(rs, nodes, gamma)
-    r2, ever_infected2 = prepare_plot(rs2, nodes, gamma)
-
+    rng = jax.random.PRNGKey(43)
+    comp = jnp.int32(jax.random.bernoulli(rng, infect / nodes, shape=[nodes]))
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=ever_infected1[:-1]*100, y=r1, name="R1"))
-    fig.add_trace(go.Scatter(x=ever_infected2[:-1]*100, y=r2, name="R2"))
+
+    for i in [1, 2]:
+        k = i * k
+        params["edge_beta"] = params["edge_beta"] / i
+        for p in [0, 0.5, 0.9]:
+            list_of_graphs = []
+            for repetition in range(10):
+                g = nx.random_graphs.powerlaw_cluster_graph(nodes, k, p)
+                rs = make_simulation(np, g, comp, params, steps)
+                r, ever_infected = prepare_plot(rs, nodes, gamma)
+                list_of_graphs.append({"r": r, "ever_infected": ever_infected[:-1]})
+                #fig.add_trace(go.Scatter(x=ever_infected[:-1] * 100, y=r, name=f"repetition={repetition}, p={p}, k={k}"))
+            r_final, ever_infected_final, new_graphs = aggregate_graphs(list_of_graphs)
+            std = [jnp.std(jnp.array([new_graphs[j]["r"][m] for j in range(len(new_graphs))], dtype=jnp.float32)) for m in range(len(r_final))]
+            intervals = [st.t.interval(1-confidence_interval, len(list_of_graphs) - 1, loc=r_final[m], scale=std[m]) for m in range(len(std))]
+            fig.add_trace(go.Scatter(x=ever_infected_final * 100, y=r_final, name=f"mean:p={p}, k={k}"))
+            fig.add_trace(go.Scatter(
+                name='Upper Bound',
+                x=ever_infected_final * 100,
+                y=[intervals[m][1] for m in range(len(std))],
+                mode='lines',
+                marker=dict(color="#444"),
+                line=dict(width=0),
+                showlegend=False
+            ))
+            fig.add_trace(go.Scatter(
+                name='Lower Bound',
+                x=ever_infected_final * 100,
+                y=[intervals[m][0] for m in range(len(std))],
+                marker=dict(color="#444"),
+                line=dict(width=0),
+                mode='lines',
+                fillcolor='rgba(68, 68, 68, 0.3)',
+                fill='tonexty',
+                showlegend=False
+            ))
+            #for i in range(len(new_graphs)):
+             #   fig.add_trace(go.Scatter(x=new_graphs[i]["ever_infected"] * 100, y=new_graphs[i]["r"], name=f"repetition={i}, mean:p={p}, k={k}"))
+
     fig.show()
 

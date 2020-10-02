@@ -6,10 +6,30 @@ import jax.numpy as jnp
 from .. import jax_utils
 from ..utils import PytreeDict
 
-ProcessStateData = collections.namedtuple(
-    "ProcessStateData",
-    ["rng_key", "edges", "params_pytree", "nodes_pytree", "edges_pytree", "n", "m"],
-)
+
+class ProcessStateData(
+    collections.namedtuple(
+        "ProcessStateData",
+        ["rng_key", "edges", "params_pytree", "nodes_pytree", "edges_pytree", "n", "m"],
+    )
+):
+    __slots__ = ()
+
+    @property
+    def n(self):
+        "Return `n` based on the shapes, or None if no node data is present."
+        leaves = jax.tree_leaves(self.nodes_pytree)
+        if leaves:
+            return leaves[0].shape[0]
+        return None
+
+    @property
+    def m(self):
+        "Return `m` based on the shapes, or None if no edge data is present."
+        leaves = jax.tree_leaves(self.edges_pytree)
+        if leaves:
+            return leaves[0].shape[0]
+        return None
 
 
 class ProcessState:

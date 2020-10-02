@@ -1,3 +1,8 @@
+import logging
+
+log = logging.getLogger(__name__)
+
+
 class TracingDict(dict):
     """
     Utility dict wrapper to track accessed keys.

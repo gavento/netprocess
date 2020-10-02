@@ -33,9 +33,9 @@ class NetworkProcess:
         steps_array = jnp.zeros((steps, 1))
         state_data = state.as_pytree()
         if jit:
-            state_update, records = self._run_jit(state_data, steps_array, state)
+            state_update, records = self._run_jit(state_data, steps_array, True)
         else:
-            state_update, records = self._run(state_data, steps_array, None)
+            state_update, records = self._run(state_data, steps_array, False)
         return state.copy_updated(state_update, [records])
 
     def trace_log(self):
@@ -54,19 +54,22 @@ class NetworkProcess:
         if block:
             new_state.block_on_all()
 
-    def _run(self, state: ProcessStateData, steps_array: jnp.int32, traced_state):
+    def _run(
+        self, state: ProcessStateData, steps_array: jnp.DeviceArray, tracing: bool
+    ):
         """Returns (new_state, all_records_pytree). JIT-able."""
-        if traced_state is not None:
-            msg = f"Tracing {self} with n={traced_state.n}, m={traced_state.m}, steps={len(steps_array)}"
+        if tracing:
+            msg = f"Tracing {self} with n={state.n}, m={state.m}, steps={steps_array.shape[0]}"
+            self._tr = Tracer(tracing=True)
             self._traced += 1
             log.debug(msg)
         return jax.lax.scan(
-            lambda s, _: self._run_step(s, tracing=traced_state is not None),
+            lambda s, _: self._run_step(s),
             state,
             steps_array,
         )
 
-    def _run_step(self, state: ProcessStateData, tracing=False):
+    def _run_step(self, state: ProcessStateData):
         """Returns (new_state, record_pytree). JIT-able."""
 
         # Original state, never updated

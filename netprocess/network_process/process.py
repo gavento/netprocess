@@ -29,13 +29,29 @@ class NetworkProcess:
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.operations}>"
 
-    def run(self, state: ProcessState, steps=1, jit=True) -> ProcessState:
+    def run(
+        self,
+        state: ProcessState,
+        steps=1,
+        jit=True,
+        mask=None,
+        pad_n=None,
+        pad_m=None,
+        pad_steps=None,
+    ) -> ProcessState:
+        if mask is None:
+            mask = not ((pad_n is None) and (pad_m is None) and (pad_steps is None))
+
         steps_array = jnp.zeros((steps, 1))
         state_data = state.as_pytree()
         if jit:
+            if mask:
+                steps_array = resize_pytree_to(steps_array, steps, pad_steps)
+                state_data = state_data._pad_to(n=pad_n, m=pad_m)
             state_update, records = self._run_jit(state_data, steps_array, True)
         else:
             state_update, records = self._run(state_data, steps_array, False)
+
         return state.copy_updated(state_update, [records])
 
     def trace_log(self):

@@ -3,7 +3,7 @@ import collections
 import jax
 import jax.numpy as jnp
 
-from .. import jax_utils
+from .. import jax_utils, resize_pytree_to
 from ..utils import PytreeDict, Pytree
 
 
@@ -31,31 +31,12 @@ class ProcessStateData(
             return leaves[0].shape[0]
         return None
 
-    @classmethod
-    def _pad_pytree_to(_cls, pt: Pytree, old_n, n=None):
-        """Internal, pad or shrink first dim of all leaves if `n` is not None.
-        Return new first dim size and new pytree."""
-        if n is None:
-            return old_n, pt
-        elif old_n < n:
-            return (
-                n,
-                jax.tree_map(
-                    lambda a: jnp.pad(
-                        a, [(0, n - old_n)] + ([(0, 0)] * (len(a.shape) - 1))
-                    ),
-                    pt,
-                ),
-            )
-        else:
-            return n, jax.tree_map(lambda a: a[:n], pt)
-
     def _pad_to(self, n=None, m=None):
         """Return a copy of self padded or shortened to
         N and/or M (whichever is given)"""
-        n2, nt2 = self._pad_pytree_to(self.nodes_pytree, self.n, n)
-        m2, et2 = self._pad_pytree_to(self.edges_pytree, self.m, m)
-        _, edges2 = self._pad_pytree_to(self.edges, self.m, m)
+        n2, nt2 = resize_pytree_to(self.nodes_pytree, self.n, n)
+        m2, et2 = resize_pytree_to(self.edges_pytree, self.m, m)
+        _, edges2 = resize_pytree_to(self.edges, self.m, m)
         return self._replace(
             edges=edges2, nodes_pytree=nt2, n=n2, edges_pytree=et2, m=m2
         )

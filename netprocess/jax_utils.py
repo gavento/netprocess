@@ -93,3 +93,26 @@ def switch(funs: typing.List, i: jnp.int32, *args) -> typing.Any:
         lambda _: switch(funs[:-1], i, *args),
         None,
     )
+
+
+def resize_pytree_to(_cls, pt: Pytree, old_n, n=None):
+    """
+    Pad or shrink first dim of all leaves if `n` is not None.
+
+    Return (new first dim size, new pytree).
+    If `n` is None, return (`old_n`, `pt`).
+    """
+    if n is None:
+        return old_n, pt
+    elif old_n < n:
+        return (
+            n,
+            jax.tree_map(
+                lambda a: jnp.pad(
+                    a, [(0, n - old_n)] + ([(0, 0)] * (len(a.shape) - 1))
+                ),
+                pt,
+            ),
+        )
+    else:
+        return n, jax.tree_map(lambda a: a[:n], pt)

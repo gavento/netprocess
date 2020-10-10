@@ -69,16 +69,27 @@ def aggregate_graphs(list_of_graphs):
     return new_r, union, new_graphs
 
 
+def remove_hubs(g, max_degree):
+    to_delete = []
+    for i in range(len(g.nodes)):
+        if g.degree[i] > max_degree:
+            to_delete.append(i)
+    for i in to_delete:
+        g.remove_node(i)
+    g = nx.relabel.convert_node_labels_to_integers(g)
+    return g
+
 @cli.command()
 @click.option("-b", "--edge_beta", default=0.05)
 @click.option("-g", "--gamma", default=0.07)
 @click.option("-I", "--infect", default=100)
 @click.option("-n", "--nodes", default=100000)
-@click.option("-steps", "--steps", default=100)
+@click.option("-steps", "--steps", default=200)
 @click.option("-k", "--k", default=3)
 @click.option("-pt", "--p_triangle", default=0.5)
-@click.option("-ci", "--confidence_interval", default=0.1)
-def r_graph(edge_beta, gamma, infect, nodes, steps, k, p_triangle, confidence_interval):
+@click.option("-ci", "--confidence_interval", default=0.05)
+@click.option("-md", "--max_degree", default=300)
+def r_graph(edge_beta, gamma, infect, nodes, steps, k, p_triangle, confidence_interval, max_degree):
     np = network_process.NetworkProcess(
         [
             epi.SIRUpdateOp(),
@@ -94,11 +105,11 @@ def r_graph(edge_beta, gamma, infect, nodes, steps, k, p_triangle, confidence_in
     log.info(
         f"Network: Barabasi-Albert. n={nodes}, k={k}, cca {nodes*k*2:.2e} directed edges"
     )
-    g = nx.random_graphs.powerlaw_cluster_graph(nodes, k, p_triangle) #nx.random_graphs.barabasi_albert_graph(nodes, k)
-    g2 = nx.random_graphs.random_regular_graph(2*k, nodes)#gnm_random_graph(nodes, nodes*k)
+    # g = nx.random_graphs.powerlaw_cluster_graph(nodes, k, p_triangle) #nx.random_graphs.barabasi_albert_graph(nodes, k)
+    # g2 = nx.random_graphs.random_regular_graph(2*k, nodes)#gnm_random_graph(nodes, nodes*k)
 
     rng = jax.random.PRNGKey(43)
-    comp = jnp.int32(jax.random.bernoulli(rng, infect / nodes, shape=[nodes]))
+    # comp = jnp.int32(jax.random.bernoulli(rng, infect / nodes, shape=[nodes]))
     fig = go.Figure()
 
     for i in [1, 2]:
@@ -108,14 +119,17 @@ def r_graph(edge_beta, gamma, infect, nodes, steps, k, p_triangle, confidence_in
             list_of_graphs = []
             for repetition in range(10):
                 g = nx.random_graphs.powerlaw_cluster_graph(nodes, k, p)
+                g = remove_hubs(g, max_degree)
+                new_nodes = len(g.nodes)
+                comp = jnp.int32(jax.random.bernoulli(rng, infect / new_nodes, shape=[new_nodes]))
                 rs = make_simulation(np, g, comp, params, steps)
-                r, ever_infected = prepare_plot(rs, nodes, gamma)
+                r, ever_infected = prepare_plot(rs, new_nodes, gamma)
                 list_of_graphs.append({"r": r, "ever_infected": ever_infected[:-1]})
                 #fig.add_trace(go.Scatter(x=ever_infected[:-1] * 100, y=r, name=f"repetition={repetition}, p={p}, k={k}"))
             r_final, ever_infected_final, new_graphs = aggregate_graphs(list_of_graphs)
             std = [jnp.std(jnp.array([new_graphs[j]["r"][m] for j in range(len(new_graphs))], dtype=jnp.float32)) for m in range(len(r_final))]
             intervals = [st.t.interval(1-confidence_interval, len(list_of_graphs) - 1, loc=r_final[m], scale=std[m]) for m in range(len(std))]
-            fig.add_trace(go.Scatter(x=ever_infected_final * 100, y=r_final, name=f"mean:p={p}, k={k}"))
+            fig.add_trace(go.Scatter(x=ever_infected_final * 100, y=r_final, name=f"p={p}, k={k}", line=dict(width=5)))
             fig.add_trace(go.Scatter(
                 name='Upper Bound',
                 x=ever_infected_final * 100,
@@ -132,12 +146,17 @@ def r_graph(edge_beta, gamma, infect, nodes, steps, k, p_triangle, confidence_in
                 marker=dict(color="#444"),
                 line=dict(width=0),
                 mode='lines',
-                fillcolor='rgba(68, 68, 68, 0.3)',
+                fillcolor='rgba(68, 68, 68, 0.2)',
                 fill='tonexty',
                 showlegend=False
             ))
             #for i in range(len(new_graphs)):
              #   fig.add_trace(go.Scatter(x=new_graphs[i]["ever_infected"] * 100, y=new_graphs[i]["r"], name=f"repetition={i}, mean:p={p}, k={k}"))
 
+    fig.update_layout(
+        xaxis_title="Already infected (%)",
+        yaxis_title="R",
+    )
     fig.show()
+    plotly.offline.plot(fig, filename='/home/lenka/Projects/netprocess/netprocess/scripts/figure.html')
 

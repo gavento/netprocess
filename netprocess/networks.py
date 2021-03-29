@@ -1,6 +1,51 @@
+import json
+
+import attr
 import jax.numpy as jnp
 import networkx as nx
+import numpy as np
+import filelock
+
 from .utils import is_integer
+
+
+@attr.s(auto_attribs=True)
+class Network:
+    """
+    Saved as:
+    "NAME.json" - metadata dict
+    "NAME.npy" - numpy array shaped (N, 2)
+    "NAME.graphml.bz2" - compressed GraphML (optional)
+    "NAME.json.lock" - metadata lockfile
+    """
+
+    _nx_graph: nx.Graph = None
+    meta: dict = attr.Factory(dict)
+    edges: np.ndarray = None
+    base_path: str = None
+
+    @classmethod
+    def load(cls, base_path):
+        pass
+
+    @classmethod
+    def from_nx_graph(cls, g, base_path):
+        pass
+
+    def nx_graph(self):
+        if self._nx_graph is None:
+            # nx.readwrite.graphml.write_graphml
+            self._nx_graph = nx.readwrite.graphml.read_graphml(
+                f"{self.base_path}.graphml.bz2"
+            )
+        return self._nx_graph
+
+    def write_meta(self):
+        with open(f"{self.base_path}.json", "wt") as f:
+            json.dump(self.meta, f)
+
+    def write_np(self):
+        np.save(f"{self.base_path}.npy", self.edges)
 
 
 def nx_graph_to_edges(graph: nx.Graph, dtype=jnp.int32, sort="from") -> jnp.DeviceArray:

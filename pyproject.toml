@@ -18,6 +18,8 @@ jaxlib = "^0.1.52"
 pre-commit = "^2.7.1"
 attrs = "^20.3.0"
 filelock = "^3.0.12"
+zstd = "^1.4.8"
+powerlaw = "^1.4.6"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.1"

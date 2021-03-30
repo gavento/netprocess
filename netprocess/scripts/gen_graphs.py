@@ -28,7 +28,7 @@ def gen_barabasi_albert(n, m, seed, output_dir):
     if not output_dir:
         output_dir = "."
     base_path = os.path.join(output_dir, f"barabasi_albert-n_{n}-m_{m}-s_{seed:06}")
-    with utils.logged_time(f"Creating {base_path!r}.*"):
+    with utils.logged_time(f"Creating {base_path!r}"):
         g = nx.random_graphs.barabasi_albert_graph(n, m, seed=seed)
         write_network_multi(
             g,
@@ -38,6 +38,7 @@ def gen_barabasi_albert(n, m, seed, output_dir):
                 gen_m=m,
                 gen_seed=seed,
                 powerlaw_min_k=m,
+                powerlaw_true_exp=3.0,
             ),
             base_path,
         )

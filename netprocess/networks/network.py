@@ -71,11 +71,11 @@ class Network:
         Undirected graphs get both edge directions added.
         """
         # TODO: assert all nodes are integers 0..n-1, or remap to this
-        es = np.array(g.edges(), dtype=dtype)
-        if isinstance(g, nx.DiGraph):
-            edges = np.sort(es, axis=0)
-        else:
-            edges = np.sort(np.concatenate((es, es[:, 1::-1])), axis=0)
+        edges = np.array(g.edges(), dtype=dtype)
+        if not isinstance(g, nx.DiGraph):
+            edges = np.concatenate((edges, edges[:, 1::-1]))
+        eorder = np.lexsort((edges[:, 1], edges[:, 0]))
+        edges = edges[eorder]
 
         if meta is None:
             meta = {}
@@ -94,7 +94,6 @@ class Network:
             for v, d, t, _ in nx.algorithms.cluster._triangles_and_degree_iter(g):
                 ts[v] = t
                 ds[v] = d
-            print(ds)
 
             meta["degree_mean"] = np.mean(ds)
             meta["degree_var"] = np.var(ds)

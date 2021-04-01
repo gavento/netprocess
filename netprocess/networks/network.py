@@ -1,10 +1,12 @@
 import json
 import pickle
+from typing import Any
 
 import jax.numpy as jnp
 import networkx as nx
 import numpy as np
-import powerlaw
+
+# import powerlaw
 import zstd
 
 
@@ -60,6 +62,16 @@ class Network:
         self.data.setdefault("params_pytree", {})
         self.data.setdefault("nodes_pytree", {})
         self.data.setdefault("edges_pytree", {})
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in ("params_pytree", "nodes_pytree", "edges_pytree", "meta", "edges"):
+            return self.data[name]
+        return super().__getattribute__(name)
+
+    def __setattr__(self, name: str, value: Any):
+        if name in ("params_pytree", "nodes_pytree", "edges_pytree", "meta", "edges"):
+            self.data[name] = value
+        super().__setattr__(name, value)
 
     @classmethod
     def from_graph(cls, g, meta=None, dtype=np.int32, with_stats=True):
@@ -129,7 +141,7 @@ class Network:
     def load(cls, path):
         with open(path, "rb") as f:
             if path.endswith(".zstd"):
-                return cls(pickle.loads(zstd.decode(f.read)))
+                return cls(pickle.loads(zstd.decompress(f.read())))
             else:
                 return cls(pickle.load(f.read))
 

@@ -8,7 +8,7 @@ import numpy as np
 import tqdm
 from jax import lax
 from jax import numpy as jnp
-from netprocess import epi, network_process, networks, utils
+from netprocess import epi, network_process, data, utils
 
 from .cli import cli
 
@@ -34,7 +34,7 @@ def run_sir(edge_beta, gamma, infect, seed, output_prefix, network, steps, delta
     if seed is None:
         seed = np.random.randint(1000000)
 
-    net = networks.Network.load(network)
+    net = data.Network.load(network)
     log.info(f"Loaded {network!r} n={net.meta['n']}, m={net.meta['m']} (directed)")
 
     net.params_pytree["edge_beta"] = edge_beta

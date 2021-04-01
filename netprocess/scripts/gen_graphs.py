@@ -4,7 +4,7 @@ import os.path
 import click
 import networkx as nx
 import numpy as np
-from netprocess import networks, utils
+from netprocess import data, utils
 
 from .cli import cli
 
@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 
 def write_network_multi(g, meta, base_path):
-    networks.Network.from_graph(g, meta=meta).write(f"{base_path}.pickle.zstd")
+    data.Network.from_graph(g, meta=meta).write(f"{base_path}.pickle.zstd")
     nx.write_graphml(g, f"{base_path}.graphml.gz")
     nx.write_gpickle(g, f"{base_path}.gpickle.gz", protocol=4)
 

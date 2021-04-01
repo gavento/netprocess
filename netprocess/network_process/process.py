@@ -6,11 +6,12 @@ import typing
 import jax
 import jax.numpy as jnp
 import networkx as nx
+import numpy as np
 
 from .. import networks
 from ..utils import PRNGKey, PytreeDict
-from .tracing import Tracer
 from .state import ProcessState, ProcessStateData, _filter_check_merge
+from .tracing import Tracer
 
 log = logging.getLogger(__name__)
 
@@ -250,7 +251,7 @@ class NetworkProcess:
 
     def new_state(
         self,
-        edges_or_graph: typing.Union[jnp.DeviceArray, nx.Graph],
+        edges_or_graph: typing.Union[jnp.DeviceArray, np.ndarray, nx.Graph],
         n: int = None,
         *,
         seed=None,
@@ -265,10 +266,10 @@ class NetworkProcess:
         """
         if seed is None:
             seed = random.randint(0, 1 << 64 - 1)
-        if isinstance(seed, jnp.DeviceArray):
+        if isinstance(seed, (jnp.DeviceArray, np.ndarray)):
             assert seed.shape == (2,)
             assert seed.dtype == jnp.int32
-            rng_key = seed
+            rng_key = jnp.array(seed)
         else:
             rng_key = jax.random.PRNGKey(seed)
 
@@ -278,14 +279,19 @@ class NetworkProcess:
                 raise ValueError(
                     "non-empty edges_pytree while passing a graph is unstable"
                 )
-            if n is not None:
-                assert n == edges_or_graph.order()
-            n = edges_or_graph.order()
+            if n is None:
+                n = edges_or_graph.order()
+            assert n == edges_or_graph.order()
+
         else:
             edges = jnp.array(edges_or_graph, dtype=jnp.int32)
             if n is None:
                 raise ValueError("n is needed when only edge-list is given")
             assert (edges < n).all()
+
+        params_pytree = jax.tree_map(jnp.array, params_pytree)
+        nodes_pytree = jax.tree_map(jnp.array, nodes_pytree)
+        edges_pytree = jax.tree_map(jnp.array, edges_pytree)
 
         state = ProcessState(
             rng_key,

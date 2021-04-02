@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 
-from .. import networks
+from ..data import network
 from ..utils import PRNGKey, PytreeDict
 from .state import ProcessState, ProcessStateData, _filter_check_merge
 from .tracing import Tracer
@@ -163,13 +163,19 @@ class NetworkProcess:
                 n_pt.update(updates)
             return n_pt
 
-        def scatter_op(agg_op, agg_base, e_vals, e_endpoints):
+        def scatter_op(agg_op, zval, e_vals, e_endpoints):
             "Compute given aggregate of e_vals grouped by e_endpoints"
-            # Get neutral value of the op from the op on an empty array
-            zval = agg_base(jnp.array((), dtype=e_vals.dtype))
+            # Get min/max operation-neutral value for integers and infinities
+            # NB: this is numpy - should be static vals in the computation graph
+            if np.isneginf(zval) and np.issubdtype(e_vals.dtype, np.integer):
+                zval = np.iinfo(e_vals.dtype).min
+            elif np.isinf(zval) and np.issubdtype(e_vals.dtype, np.integer):
+                zval = np.iinfo(e_vals.dtype).max
             # Array of neutral values
             z = jnp.full(
-                state.nodes_pytree["i"].shape + e_vals.shape[1:], zval, dtype=zval.dtype
+                state.nodes_pytree["i"].shape + e_vals.shape[1:],
+                zval,
+                dtype=e_vals.dtype,
             )
             e_endpoints_exp = jnp.expand_dims(e_endpoints, 1)
             dims = jax.lax.ScatterDimensionNumbers(
@@ -179,23 +185,18 @@ class NetworkProcess:
 
         # Compute edge-to-node value aggregates
         in_edges_agg, out_edges_agg = {}, {}
-        for agg_op, agg_name, agg_base in (
-            (jax.lax.scatter_add, "sum", jnp.sum),
-            (jax.lax.scatter_mul, "prod", jnp.prod),
-            (jax.lax.scatter_min, "min", jnp.min),
-            (jax.lax.scatter_max, "max", jnp.max),
+        for agg_op, agg_name, zval in (
+            (jax.lax.scatter_add, "sum", 0),
+            (jax.lax.scatter_mul, "prod", 1),
+            (jax.lax.scatter_min, "min", -np.inf),
+            (jax.lax.scatter_max, "max", np.inf),
         ):
             in_edges_agg[agg_name] = jax.tree_util.tree_map(
-                lambda a: scatter_op(agg_op, agg_base, a, state.edges[:, 1]),
+                lambda a: scatter_op(agg_op, zval, a, state.edges[:, 1]),
                 state.edges_pytree,
             )
             out_edges_agg[agg_name] = jax.tree_util.tree_map(
-                lambda a: scatter_op(
-                    agg_op,
-                    agg_base,
-                    a,
-                    state.edges[:, 0],
-                ),
+                lambda a: scatter_op(agg_op, zval, a, state.edges[:, 0]),
                 state.edges_pytree,
             )
 
@@ -258,7 +259,7 @@ class NetworkProcess:
         params_pytree={},
         nodes_pytree={},
         edges_pytree={},
-    ):
+    ):  # TODO: update to just use a Network instance?
         """
         Create a new ProcessState with initial pytree elements for all operations.
 
@@ -274,7 +275,7 @@ class NetworkProcess:
             rng_key = jax.random.PRNGKey(seed)
 
         if isinstance(edges_or_graph, nx.Graph):
-            edges = networks.nx_graph_to_edges(edges_or_graph)
+            edges = network.Network.from_graph(edges_or_graph).edges
             if edges_pytree:
                 raise ValueError(
                     "non-empty edges_pytree while passing a graph is unstable"
@@ -289,10 +290,7 @@ class NetworkProcess:
                 raise ValueError("n is needed when only edge-list is given")
             assert (edges < n).all()
 
-        params_pytree = jax.tree_map(jnp.array, params_pytree)
-        nodes_pytree = jax.tree_map(jnp.array, nodes_pytree)
-        edges_pytree = jax.tree_map(jnp.array, edges_pytree)
-
+        # Note: all pytree elements are converted to jax arrays later in the state
         state = ProcessState(
             rng_key,
             n,

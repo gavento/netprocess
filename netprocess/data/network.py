@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 
-# import powerlaw
+import powerlaw
 import zstd
 
 

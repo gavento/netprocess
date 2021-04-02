@@ -1,14 +1,10 @@
 import logging
-import time
 
 import click
-import tqdm
-
 import jax
 import networkx as nx
-from jax import lax
 from jax import numpy as jnp
-from netprocess import epi, network_process, networks, utils
+from netprocess import epi, network_process, utils
 
 from .cli import cli
 

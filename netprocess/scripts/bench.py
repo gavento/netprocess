@@ -4,11 +4,8 @@ import time
 import click
 import tqdm
 
-import jax
 import networkx as nx
-from jax import lax
-from jax import numpy as jnp
-from netprocess import epi, network_process, networks, utils
+from netprocess import epi, network_process, utils
 
 from .cli import cli
 
@@ -29,7 +26,7 @@ def bench_sir(edge_beta, gamma):
     )
     params = {"edge_beta": edge_beta, "gamma": gamma}
 
-    for n in [100, 10000, 1000000]:
+    for n in [100, 1000, 10000, 100000]:
         for k in [3, 10]:
             log.info(
                 f"Network: Barabasi-Albert. n={n}, k={k}, cca {n*k*2:.2e} directed edges"
@@ -52,7 +49,7 @@ def bench_sir(edge_beta, gamma):
                 t1 = time.time()
                 log.info(f"    {steps} took {t1-t0:.3g} s")
 
-                if t1 - t0 > 0.5:
+                if t1 - t0 > 0.8:
                     break
             sps = steps / (t1 - t0)
             log.info(

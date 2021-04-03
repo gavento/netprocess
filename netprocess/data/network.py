@@ -2,43 +2,23 @@ import json
 import pickle
 from typing import Any
 
+import attr
 import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 
-import powerlaw
-import zstd
+from .data_utils import load_object, save_object
+from .network_stats import powerlaw_exp_fp, powerlaw_exp_vl
 
 
-def powerlaw_exp_vl(degrees, k_min=1.0, discrete=False):
-    """
-    Estimate powerlaw exponent using "vannila" sampling from https://arxiv.org/pdf/1908.00310.pdf
-    """
-    ds = np.array(degrees)
-    if discrete:
-        k_min = k_min - 0.5
-    ds = ds[ds >= k_min]
-    return len(ds) / np.sum(np.log(ds / k_min)) + 1.0
-
-
-def powerlaw_exp_fp(degrees, k_min=1.0, discrete=False):
-    """
-    Estimate powerlaw exponent using "friendship paradox" sampling from https://arxiv.org/pdf/1908.00310.pdf
-    """
-    ds = np.array(degrees)
-    if discrete:
-        k_min = k_min - 0.5
-    ds = ds[ds >= k_min]
-    return np.sum(ds) / np.sum(ds * np.log(ds / k_min)) + 2.0
-
-
+@attr.s
 class Network:
     """
     Saved as:
 
     "NAME.pickle[.zstd]" - pickle-v4 serialized dict of:
         * `edges: np.ndarray` shaped (M, 2) (edges in both directions for undirected graphs)
-        * `params_pytree: dict` of np.ndarrays
+        * `params_pytree: dict` of np.ndarrays, any shape
         * `nodes_pytree: dict` of np.ndarrays, shaped (N, ...)
         * `edges_pytree: dict` of np.ndarrays, shaped (M, ...)
         * `meta: dict` of anything, in particular has:
@@ -53,25 +33,25 @@ class Network:
             * 'clustering_global'
     """
 
-    def __init__(self, data):
-        self.data = dict(data)
-        assert "edges" in self.data
-        assert isinstance(self.data["edges"], np.ndarray)
-        assert "meta" in self.data
-        assert self.data["edges"].shape == (self.data["meta"]["m"], 2)
-        self.data.setdefault("params_pytree", {})
-        self.data.setdefault("nodes_pytree", {})
-        self.data.setdefault("edges_pytree", {})
+    edges = attr.ib(type=np.ndarray, required=True)
+    meta = attr.ib(type=dict, required=True)
+    params_pytree = attr.ib(factory=dict, type=dict)
+    nodes_pytree = attr.ib(factory=dict, type=dict)
+    edges_pytree = attr.ib(factory=dict, type=dict)
+    ATTRS = ("params_pytree", "nodes_pytree", "edges_pytree", "meta", "edges")
 
-    def __getattribute__(self, name: str) -> Any:
-        if name in ("params_pytree", "nodes_pytree", "edges_pytree", "meta", "edges"):
-            return self.data[name]
-        return super().__getattribute__(name)
+    @property
+    def n(self):
+        return self.meta["n"]
 
-    def __setattr__(self, name: str, value: Any):
-        if name in ("params_pytree", "nodes_pytree", "edges_pytree", "meta", "edges"):
-            self.data[name] = value
-        super().__setattr__(name, value)
+    @property
+    def m(self):
+        return self.meta["m"]
+
+    def __attrs_post_init__(self):
+        assert self.edges.shape == (self.m, 2)
+        assert "m" in self.meta
+        assert "n" in self.meta
 
     @classmethod
     def from_graph(cls, g, meta=None, dtype=np.int32, with_stats=True):
@@ -83,6 +63,7 @@ class Network:
         Undirected graphs get both edge directions added.
         """
         # TODO: assert all nodes are integers 0..n-1, or remap to this
+
         edges = np.array(g.edges(), dtype=dtype)
         if not isinstance(g, nx.DiGraph):
             edges = np.concatenate((edges, edges[:, 1::-1]))
@@ -98,56 +79,46 @@ class Network:
         meta["n"] = n
         meta["m"] = edges.shape[0]
 
+        s = cls(dict(meta=meta, edges=edges))
         if with_stats:
-            assert not isinstance(g, nx.DiGraph)
-
-            # triangle and degree count for every vertex
-            ts, ds = np.zeros(n), np.zeros(n, dtype=dtype)
-            for v, d, t, _ in nx.algorithms.cluster._triangles_and_degree_iter(g):
-                ts[v] = t
-                ds[v] = d
-
-            meta["degree_mean"] = np.mean(ds)
-            meta["degree_var"] = np.var(ds)
-
-            pf = powerlaw.Fit(
-                ds,
-                discrete=True,
-                xmin=meta.get("powerlaw_min_k"),
-                xmax=meta.get("powerlaw_max_k"),
-            )
-            meta["powerlaw_jeff_exp"] = pf.power_law.alpha
-            meta["powerlaw_jeff_xmin"] = pf.power_law.xmin
-            meta["powerlaw_jeff_xmax"] = pf.power_law.xmax
-
-            meta.setdefault("powerlaw_min_k", max(np.min(ds), 1.0))
-            meta["powerlaw_exp_vl"] = powerlaw_exp_vl(
-                ds, meta["powerlaw_min_k"], discrete=True
-            )
-            meta["powerlaw_exp_fp"] = powerlaw_exp_fp(
-                ds, meta["powerlaw_min_k"], discrete=True
-            )
-
-            cs = ts / np.maximum(ds * (ds - 1), 1.0)
-            meta["clustering_mean"] = np.mean(cs)
-            meta["clustering_var"] = np.var(cs)
-            meta["clustering_global"] = np.sum(ts) / np.maximum(
-                np.sum(ds * (ds - 1)), 1.0
-            )
-
-        return cls(dict(meta=meta, edges=edges))
+            s.compute_stats(g)
+        return s
 
     @classmethod
     def load(cls, path):
-        with open(path, "rb") as f:
-            if path.endswith(".zstd"):
-                return cls(pickle.loads(zstd.decompress(f.read())))
-            else:
-                return cls(pickle.load(f.read))
+        d = load_object(path)
+        assert frozenset(d.keys()) == frozenset(cls.ATTRS)
+        # Set it here if the network was moved after generation, also to be more
+        # useful for storing resulting state
+        d["meta"]["network_path"] = path
+        return cls(**d)
 
     def write(self, path):
-        with open(path, "wb") as f:
-            if path.endswith(".zstd"):
-                f.write(zstd.compress(pickle.dumps(self.data, protocol=4)))
-            else:
-                pickle.dump(self.data, f, protocol=4)
+        save_object({k: getattr(self, k) for k in self.ATTRS}, path)
+
+    def compute_stats(self, g):
+        assert not isinstance(g, nx.DiGraph)
+
+        # triangle and degree count for every vertex
+        ts, ds = np.zeros(self.n), np.zeros(self.n, dtype=self.edges.dtype)
+        for v, d, t, _ in nx.algorithms.cluster._triangles_and_degree_iter(g):
+            ts[v] = t
+            ds[v] = d
+
+        self.meta["degree_mean"] = np.mean(ds)
+        self.meta["degree_var"] = np.var(ds)
+
+        self.meta.setdefault("powerlaw_min_k", max(np.min(ds), 1.0))
+        self.meta["powerlaw_exp_vl"] = powerlaw_exp_vl(
+            ds, self.meta["powerlaw_min_k"], discrete=True
+        )
+        self.meta["powerlaw_exp_fp"] = powerlaw_exp_fp(
+            ds, self.meta["powerlaw_min_k"], discrete=True
+        )
+
+        cs = ts / np.maximum(ds * (ds - 1), 1.0)
+        self.meta["clustering_mean"] = np.mean(cs)
+        self.meta["clustering_var"] = np.var(cs)
+        self.meta["clustering_global"] = np.sum(ts) / np.maximum(
+            np.sum(ds * (ds - 1)), 1.0
+        )

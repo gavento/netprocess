@@ -4,8 +4,8 @@ import attr
 import jax
 import jax.numpy as jnp
 
-from ..jax_utils import cond, switch
-from ..network_process import OperationBase
+from ...jax_utils import cond, switch
+from .base import OperationBase
 
 
 @attr.s

@@ -3,9 +3,9 @@ from typing import List, Union
 import jax
 import jax.numpy as jnp
 
-from ..utils import PRNGKey, PytreeDict
-from .operation import OperationBase
-from .state import ProcessState, ProcessStateData
+from ...utils import PRNGKey, PytreeDict
+from .base import OperationBase
+from ..state import ProcessState, ProcessStateData
 
 
 class CountNodeStatesOp(OperationBase):

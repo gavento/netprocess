@@ -33,8 +33,8 @@ class Network:
             * 'clustering_global'
     """
 
-    edges = attr.ib(type=np.ndarray, required=True)
-    meta = attr.ib(type=dict, required=True)
+    edges = attr.ib(type=np.ndarray)
+    meta = attr.ib(type=dict)
     params_pytree = attr.ib(factory=dict, type=dict)
     nodes_pytree = attr.ib(factory=dict, type=dict)
     edges_pytree = attr.ib(factory=dict, type=dict)
@@ -49,9 +49,9 @@ class Network:
         return self.meta["m"]
 
     def __attrs_post_init__(self):
-        assert self.edges.shape == (self.m, 2)
-        assert "m" in self.meta
         assert "n" in self.meta
+        self.meta.setdefault("m", self.edges.shape[0])
+        assert self.edges.shape == (self.m, 2)
 
     @classmethod
     def from_graph(cls, g, meta=None, dtype=np.int32, with_stats=True):
@@ -79,7 +79,7 @@ class Network:
         meta["n"] = n
         meta["m"] = edges.shape[0]
 
-        s = cls(dict(meta=meta, edges=edges))
+        s = cls(meta=meta, edges=edges)
         if with_stats:
             s.compute_stats(g)
         return s

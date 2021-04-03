@@ -3,7 +3,10 @@ import jax.numpy as jnp
 
 from ..jax_utils import cond, switch
 from ..network_process import OperationBase, ProcessStateData
-from ..network_process.compartmental import GenericCompartmentalUpdateOp, Transition
+from ..network_process.operations.compartmental import (
+    GenericCompartmentalUpdateOp,
+    Transition,
+)
 from ..utils import PRNGKey, PytreeDict
 
 

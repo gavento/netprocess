@@ -2,19 +2,22 @@ import jax.numpy as jnp
 import jax
 import networkx as nx
 from netprocess import network_process
+from netprocess.data import Network, network
 
 
 def _new_state(process):
-    n = 4
+    net = Network(
+        edges=jnp.array([(0, 2), (2, 1), (2, 3), (0, 1), (1, 0)]), meta=dict(n=4)
+    )
+
     return process.new_state(
-        jnp.array([(0, 2), (2, 1), (2, 3), (0, 1), (1, 0)]),
-        n=n,
+        net,
         seed=42,
         nodes_pytree={
             "x": jnp.array([[1, 2], [3, 4], [5, 6], [7, 8]]),
             "y": jnp.array([0.1, 0.2, 0.3, 0.4]),
-            "indeg": jnp.zeros(n, dtype=jnp.int32),
-            "outdeg": jnp.zeros(n, dtype=jnp.int32),
+            "indeg": jnp.zeros(net.n, dtype=jnp.int32),
+            "outdeg": jnp.zeros(net.n, dtype=jnp.int32),
         },
         edges_pytree={
             "aa": jnp.array([1.0, 2.0, 3.0, 4.0, 5.0]),
@@ -26,9 +29,8 @@ def _new_state(process):
 def test_nop_process():
     np = network_process.NetworkProcess([network_process.OperationBase()])
 
-    np.new_state([(0, 1), (1, 2)], n=3)
-
-    sa0 = np.new_state(nx.complete_graph(4), seed=32, params_pytree={"beta": 1.5})
+    n0 = Network.from_graph(nx.complete_graph(4))
+    sa0 = np.new_state(n0, seed=32, params_pytree={"beta": 1.5})
     sa1 = np.run(sa0, steps=4, jit=False)
     assert sa1.params_pytree["beta"] == 1.5
 

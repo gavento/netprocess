@@ -1,15 +1,16 @@
 import jax
 import jax.numpy as jnp
 import networkx as nx
-from netprocess import epi, network_process
+from netprocess import epi, network_process, data
 
 
 def test_sir_model():
     N = 30
     g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=42)
+    net = data.Network.from_graph(g)
     np = network_process.NetworkProcess([epi.SIRUpdateOp()])
 
-    s = np.new_state(g, params_pytree={"edge_beta": 0.05, "gamma": 0.1}, seed=43)
+    s = np.new_state(net, params_pytree={"edge_beta": 0.05, "gamma": 0.1}, seed=43)
 
     # Few passes without any infections
     s = np.run(s, steps=5)

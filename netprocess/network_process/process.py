@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 
-from ..data import network
+from ..data import Network
 from ..utils import PRNGKey, PytreeDict
 from .state import ProcessState, ProcessStateData, _filter_check_merge
 from .tracing import Tracer
@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 class NetworkProcess:
     def __init__(self, operations):
-        from .operation import OperationBase
+        from .operations import OperationBase
 
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
@@ -252,8 +252,7 @@ class NetworkProcess:
 
     def new_state(
         self,
-        edges_or_graph: typing.Union[jnp.DeviceArray, np.ndarray, nx.Graph],
-        n: int = None,
+        network: Network,
         *,
         seed=None,
         params_pytree={},
@@ -264,6 +263,7 @@ class NetworkProcess:
         Create a new ProcessState with initial pytree elements for all operations.
 
         `seed` may be jax PRNGKey, a 64 bit number (used as a seed) or None (randomize).
+        The given pytrees are used as overrides over the Network pytrees (those are untouched).
         """
         if seed is None:
             seed = random.randint(0, 1 << 64 - 1)
@@ -274,30 +274,14 @@ class NetworkProcess:
         else:
             rng_key = jax.random.PRNGKey(seed)
 
-        if isinstance(edges_or_graph, nx.Graph):
-            edges = network.Network.from_graph(edges_or_graph).edges
-            if edges_pytree:
-                raise ValueError(
-                    "non-empty edges_pytree while passing a graph is unstable"
-                )
-            if n is None:
-                n = edges_or_graph.order()
-            assert n == edges_or_graph.order()
-
-        else:
-            edges = jnp.array(edges_or_graph, dtype=jnp.int32)
-            if n is None:
-                raise ValueError("n is needed when only edge-list is given")
-            assert (edges < n).all()
-
         # Note: all pytree elements are converted to jax arrays later in the state
+        # Note: all pytrees are properly copied later in the state
         state = ProcessState(
             rng_key,
-            n,
-            edges,
-            params_pytree=params_pytree,
-            nodes_pytree=nodes_pytree,
-            edges_pytree=edges_pytree,
+            network=network,
+            params_pytree=dict(network.params_pytree, **params_pytree),
+            nodes_pytree=dict(network.nodes_pytree, **nodes_pytree),
+            edges_pytree=dict(network.edges_pytree, **edges_pytree),
             process=self,
         )
         # Prepare state for operations

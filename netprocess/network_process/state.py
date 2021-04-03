@@ -4,7 +4,8 @@ import jax
 import jax.numpy as jnp
 
 from .. import jax_utils
-from ..utils import PytreeDict, Pytree
+from ..data import Network
+from ..utils import Pytree, PytreeDict
 
 
 class ProcessStateData(
@@ -72,22 +73,31 @@ class ProcessState:
     def __init__(
         self,
         rng_key: jax.random.PRNGKey,
-        n: int,
-        edges: jnp.DeviceArray,
+        network: Network,
         params_pytree={},
         nodes_pytree={},
         edges_pytree={},
         record_chunks=(),
         process=None,
+        updated_edges=None,
     ):
+        """
+        Internal constructor, use NetworkProcess.new_state() or self.copy_updated to create.
+
+        Needs a `network` reference even if the edges were modified (considered to be the original).
+        """
         self.rng_key = rng_key
-        # Data - converted to ndarrays in _ensure_ndarrays()
-        self.edges = edges
+        # Optional NetworkProcess reference
+        self._process = process
+        # Network - a read only (!) reference
+        self._network = network
+        # Data - copied and converted to ndarrays in _ensure_ndarrays()
+        self.edges = self._network.edges if updated_edges is None else updated_edges
         self.params_pytree = params_pytree
         self.nodes_pytree = nodes_pytree
         self.edges_pytree = edges_pytree
         # Data sizes
-        self.n = jnp.array(n, dtype=jnp.int32)
+        self.n = jnp.array(self._network.n, dtype=jnp.int32)
         self.params_pytree.setdefault("n", self.n)
         self.m = jnp.array(self.edges.shape[0], dtype=jnp.int32)
         self.params_pytree.setdefault("m", self.m)
@@ -97,8 +107,6 @@ class ProcessState:
             self.edges_pytree["i"] = jnp.arange(self.m, dtype=jnp.int32)
         if "i" not in self.nodes_pytree:
             self.nodes_pytree["i"] = jnp.arange(self.n, dtype=jnp.int32)
-        # Optional NetworkProcess reference
-        self._process = process
         # Chunked stats records
         self._record_chunks = list(record_chunks)
         self._check_data()
@@ -124,13 +132,13 @@ class ProcessState:
         """
 
         assert isinstance(new_state, ProcessStateData)
-        assert self.__class__ == ProcessState
+        assert self.__class__ == ProcessState  # Any extended children may need changes
         assert self.n == new_state.n
         assert self.m == new_state.m
         return ProcessState(
             rng_key=new_state.rng_key,
-            n=new_state.n,
-            edges=new_state.edges,
+            network=self._network,
+            updated_edges=new_state.edges,
             params_pytree=_filter_check_merge(
                 self.params_pytree, new_state.params_pytree, "params_pytree"
             ),

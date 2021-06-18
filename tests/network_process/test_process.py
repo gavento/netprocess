@@ -35,7 +35,12 @@ def test_nop_process():
     assert sa1.params_pytree["beta"] == 1.5
 
     sb0 = _new_state(np)
-    sb1 = np.run(sb0, steps=1, jit=False)
+    sb1 = np.run(sb0, steps=2, jit=False)
+
+    # Look at step separately, set to 0 to allow comparison
+    assert sb1.params_pytree["step"] == 2
+    sb1.params_pytree["step"] = 0
+
     for xpt, ypt in (
         (sb0.nodes_pytree, sb1.nodes_pytree),
         (sb0.edges_pytree, sb1.edges_pytree),

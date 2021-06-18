@@ -109,7 +109,8 @@ class ProcessState:
         self.params_pytree.setdefault("n", self.n)
         self.m = jnp.array(self.edges.shape[0], dtype=jnp.int32)
         self.params_pytree.setdefault("m", self.m)
-        self._ensure_ndarrays()
+        # Default step sounting
+        self.params_pytree.setdefault("step", jnp.array(0, dtype=jnp.int32))
         # Ensure nodes and edges have numbers
         if "i" not in self.edges_pytree:
             self.edges_pytree["i"] = jnp.arange(self.m, dtype=jnp.int32)

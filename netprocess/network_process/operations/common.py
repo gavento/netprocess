@@ -8,6 +8,33 @@ from .base import OperationBase
 from ..state import ProcessState, ProcessStateData
 
 
+class AdvanceTimeOp(OperationBase):
+    """
+    Operation that advances time param by the current delta_t.
+
+    NB: You probably want to use this last in the operation order.
+    """
+
+    def __init__(
+        self,
+        t_key="t",
+        delta_t_key="delta_t",
+    ):
+        self.t_key = t_key
+        self.delta_t_key = delta_t_key
+
+    def prepare_state_pytrees(self, state):
+        state.params_pytree.setdefault(self.delta_t_key, 1.0)
+        state.params_pytree.setdefault(self.t_key, 0.0)
+
+    def update_params(self, _rng_key, state, _orig_state) -> PytreeDict:
+        params2 = jax.tree_map(lambda x: x, state.params_pytree)
+        params2[self.t_key] = (
+            state.params_pytree[self.t_key] + state.params_pytree[self.delta_t_key]
+        )
+        return params2
+
+
 class CountNodeStatesOp(OperationBase):
     def __init__(
         self, states: Union[int, List[str]], key: str = "state", dest: str = None

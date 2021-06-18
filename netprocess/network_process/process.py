@@ -22,7 +22,7 @@ class NetworkProcess:
 
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
-        self._run_jit = jax.jit(self._run, static_argnums=[2])
+        self._run_jit = jax.jit(self._run, static_argnames=["tracing"])
         self._traced = 0
         self._tr = Tracer(tracing=False)
         self._tr.log_line("<Never traced>")
@@ -31,7 +31,8 @@ class NetworkProcess:
         return f"<{self.__class__.__name__} {self.operations}>"
 
     def run(self, state: ProcessState, steps=1, jit=True) -> ProcessState:
-        steps_array = jnp.zeros((steps, 1))
+        step0 = state.params_pytree["step"]
+        steps_array = jnp.arange(step0, step0 + steps, dtype=jnp.int32)
         state_data = state.as_pytree()
         if jit:
             state_update, records = self._run_jit(state_data, steps_array, True)
@@ -42,7 +43,7 @@ class NetworkProcess:
     def trace_log(self):
         return f"Traced {self._traced} times, last log:\n{self._tr.get_log()}"
 
-    def warmup_jit(self, state=None, n=None, m=None, block=True):
+    def warmup_jit(self, state=None, n=None, m=None, steps=1, block=True):
         """Force the compilation of the JITted run function and wait for it (if `block`)."""
         if state is None:
             assert n >= 2 and m >= 1
@@ -50,7 +51,7 @@ class NetworkProcess:
         else:
             assert n is None and m is None
         # Run the jitted function
-        new_state = self.run(state, steps=1)
+        new_state = self.run(state, steps=steps)
         # Wait for all computations
         if block:
             new_state.block_on_all()
@@ -65,16 +66,21 @@ class NetworkProcess:
             self._traced += 1
             log.debug(msg)
         return jax.lax.scan(
-            lambda s, _: self._run_step(s),
+            lambda s, i: self._run_step(s, i),
             state,
             steps_array,
         )
 
-    def _run_step(self, state: ProcessStateData):
+    def _run_step(self, state: ProcessStateData, step: jnp.int32):
         """Returns (new_state, record_pytree). JIT-able."""
 
         # Original state, never updated
         orig_state = state
+
+        # Set step number
+        state = state.copy()
+        # NB: this shuld be a noop with correct external step numbering
+        state.params_pytree["step"] = step
 
         # Run all the update steps, updating the state
         state = self._run_update_edges(state)
@@ -82,6 +88,9 @@ class NetworkProcess:
         state = self._run_update_params(state, orig_state)
         # Note: this folds in values 1..(#ops) to the state rng
         records = self._run_create_record(state, orig_state)
+
+        # Finally, increment the step number
+        state.params_pytree["step"] = step + 1
 
         # Create the new state, filtering underlines and checking
         # that we only update existing keys
@@ -258,7 +267,7 @@ class NetworkProcess:
         params_pytree={},
         nodes_pytree={},
         edges_pytree={},
-    ):  # TODO: update to just use a Network instance?
+    ):
         """
         Create a new ProcessState with initial pytree elements for all operations.
 

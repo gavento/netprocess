@@ -61,6 +61,14 @@ class ProcessStateData(
             edges=edges2, nodes_pytree=nt2, n=n2, edges_pytree=et2, m=m2
         )
 
+    def copy(self):
+        """Copy the state, reusing all the DeviceArrays and immutable objects."""
+        return self._replace(
+            params_pytree=jax.tree_map(lambda x: x, self.params_pytree),
+            nodes_pytree=jax.tree_map(lambda x: x, self.nodes_pytree),
+            edges_pytree=jax.tree_map(lambda x: x, self.edges_pytree),
+        )
+
 
 class ProcessState:
     """
@@ -109,16 +117,27 @@ class ProcessState:
             self.nodes_pytree["i"] = jnp.arange(self.n, dtype=jnp.int32)
         # Chunked stats records
         self._record_chunks = list(record_chunks)
+        self._ensure_ndarrays()
         self._check_data()
 
-    def _ensure_ndarrays(self):
-        "Ensure all the data and pytrees are ndarrays."
+    def _ensure_ndarrays(self, concretize_types=True):
+        """Ensure all the data in pytrees are DeviceArrays.
+
+        With concretize_types=True converts all weak_types to strong types,
+        integers to int32 and floats to float32, bools to bool_.
+        """
         self.edges = jax_utils.ensure_array(self.edges, dtype=jnp.int32)
         self.m = jax_utils.ensure_array(self.m, dtype=jnp.int32)
         self.n = jax_utils.ensure_array(self.n, dtype=jnp.int32)
-        self.params_pytree = jax_utils.ensure_pytree(self.params_pytree)
-        self.nodes_pytree = jax_utils.ensure_pytree(self.nodes_pytree)
-        self.edges_pytree = jax_utils.ensure_pytree(self.edges_pytree)
+        self.params_pytree = jax_utils.ensure_pytree(
+            self.params_pytree, concretize_types=concretize_types
+        )
+        self.nodes_pytree = jax_utils.ensure_pytree(
+            self.nodes_pytree, concretize_types=concretize_types
+        )
+        self.edges_pytree = jax_utils.ensure_pytree(
+            self.edges_pytree, concretize_types=concretize_types
+        )
 
     def copy_updated(self, new_state: ProcessStateData, new_records=()):
         """

@@ -5,39 +5,85 @@ import jax
 import jax.numpy as jnp
 
 from ...jax_utils import cond, switch
+from ...utils import PytreeDict, PRNGKey
 from .base import OperationBase
+from typing import Tuple
 
 
 @attr.s
-class Transition:
+class PoissonTransition:
     """
-    Definition of one unary or binary transition for GenericCompartmentalUpdateOp.
+    Definition of a poisson transition for GenericCompartmentalUpdateOp.
 
-    All those transitions are modelled as with exponential delay.
-
-    Unary example:
-        Transition("I", "R", param_key="immunity_loss_rate", default_val=0.01)
-    Binary example:
-        Transition("I", "R", param_key="immunity_loss_rate", default_val=0.01)
+    States:
+        `f` - transition from state name or number
+        `t` - transition to state name or number
     """
 
-    # Compartment names: from, to, [source_state]
+    # Compartment names: from, to
     f = attr.ib()
     t = attr.ib()
-    s = attr.ib(default=None)
     # Indices of the above compartments
     fi = attr.ib(init=False, default=None)
     ti = attr.ib(init=False, default=None)
+    # Name of the key recording activation of this in the node (default: None)
+    rate_key = attr.ib(kw_only=True, default=None)
+    default_rate = attr.ib(kw_only=True, default=None)
+
+    def _init_for_operation(self, _index: int, op: "PoissonCompartmentalUpdateOp"):
+        self.f, self.fi = op._lookup_compartment(self.f)
+        self.t, self.ti = op._lookup_compartment(self.t)
+
+    def sample_transition_time(
+        self, rng_key: PRNGKey, params: PytreeDict, _node, _in_edges, _out_edges
+    ) -> jnp.float32:
+        """Sample the transition delay of the transition"""
+        return jax.random.exponential(rng_key) / params[self.rate_key]
+
+    def update_edge(
+        self, _op, _rng_key, _params, _edge, _from_node, _to_node
+    ) -> PytreeDict:
+        """Add any temporary attributes to an edge (for binary transitions)"""
+        return {}
+
+
+@attr.s
+class BinaryPoissonTransition(PoissonTransition):
+    # Compartment names: source_state
+    s = attr.ib()
+    # Indices of the above compartments, filled by the Operation
     si = attr.ib(init=False, default=None)
-    # Name of the probability parameter and of the same adjusted for delta_t
-    param_key = attr.ib(kw_only=True)
-    adjusted_param_key = attr.ib(kw_only=True, default=None)
-    default_val = attr.ib(kw_only=True, default=None)
-    activated_key = attr.ib(kw_only=True, default=None)
-    binary = attr.ib(type=bool, default=False, kw_only=True)
+    edge_activated_time_key = attr.ib(kw_only=True, default=None)
+
+    def _init_for_operation(self, index: int, op: "PoissonCompartmentalUpdateOp"):
+        super()._init_for_operation(op)
+        self.s, self.si = op._lookup_compartment(self.s)
+        if self.edge_activated_time_key is None:
+            self.edge_activated_time_key = (
+                f"_{op.aux_prefix}activated_{self.f}{self.t}_{self.s}_{index}"
+            )
+
+    def update_edge(self, op, rng_key, params, edge, from_node, to_node) -> PytreeDict:
+        """Sample the transition delay of the transition on a single edge"""
+        time = cond(
+            jnp.logical_and(
+                from_node[op.state_key] == self.si,
+                to_node[op.state_key] == self.fi,
+            ),
+            lambda: jax.random.exponential(rng_key) / params[self.rate_key],
+            jnp.float32(jnp.inf),
+        )
+
+        return {self.edge_activated_time_key: time}
+
+    def sample_transition_time(
+        self, _rng_key, _params, _node, in_edges: PytreeDict, _out_edges
+    ) -> jnp.float32:
+        """Sample the transition delay of the transition"""
+        return in_edges["min"][self.edge_activated_time_key]
 
 
-class GenericCompartmentalUpdateOp(OperationBase):
+class PoissonCompartmentalUpdateOp(OperationBase):
     def __init__(
         self,
         compartments=("S",),
@@ -53,17 +99,19 @@ class GenericCompartmentalUpdateOp(OperationBase):
 
         self.transitions = copy.deepcopy(transitions)
         for i, t in enumerate(self.transitions):
-            t.fi = self.compartments.index(t.f)
-            t.ti = self.compartments.index(t.t)
-            assert (t.s != None) == (t.binary)
-            if t.adjusted_param_key is None:
-                t.adjusted_param_key = f"_{self.aux_prefix}adjusted_{t.param_key}"
-            if t.binary:
-                t.si = self.compartments.index(t.s)
-                if t.activated_key is None:
-                    t.activated_key = (
-                        f"_{self.aux_prefix}activated_{t.f}{t.t}_{t.s}_{i}"
-                    )
+            t._init_for_operation(i, self)
+
+        self.from_states = jnp.array([t.fi for t in self.transitions], dtype=jnp.int32)
+        self.to_states = jnp.array([t.ti for t in self.transitions], dtype=jnp.int32)
+
+    def _lookup_compartment(self, state_name_or_no) -> Tuple[str, int]:
+        if isinstance(state_name_or_no, str):
+            return state_name_or_no, self.compartments.index(state_name_or_no)
+        elif isinstance(state_name_or_no, int):
+            assert state_name_or_no < len(self.compartments)
+            return str(state_name_or_no), state_name_or_no
+        else:
+            raise TypeError
 
     def prepare_state_pytrees(self, state):
         """
@@ -78,50 +126,40 @@ class GenericCompartmentalUpdateOp(OperationBase):
         assert state.params_pytree[self.delta_t_key] < 1.000001
 
         for t in self.transitions:
-            if t.default_val is not None:
-                state.params_pytree.setdefault(t.param_key, t.default_val)
-            assert t.param_key in state.params_pytree
-            state.params_pytree[t.adjusted_param_key] = (
-                state.params_pytree[t.param_key] * state.params_pytree[self.delta_t_key]
-            )
-
-        state._ensure_ndarrays()
+            if t.param_key is not None:
+                if t.default_rate is not None:
+                    state.params_pytree.setdefault(t.param_key, t.default_rate)
+                assert t.param_key in state.params_pytree
 
     def update_edge(self, rng_key, params, edge, from_node, to_node):
         """
         Run all binary transitions on the directed edge, recording each activation separately.
         """
         ret = {}
-        for t in self.transitions:
-            if t.binary:
-                ret[t.activated_key] = cond(
-                    jnp.logical_and(
-                        from_node[self.state_key] == t.si,
-                        to_node[self.state_key] == t.fi,
-                    ),
-                    lambda: jnp.int32(
-                        jax.random.bernoulli(rng_key, params[t.adjusted_param_key])
-                    ),
-                    jnp.int32(0),
-                )
+        rngs = jax.random.split(rng_key, len(self.transitions))
+        for i, t in enumerate(self.transitions):
+            ret.update(t.update_edge(self, rngs[i], params, edge, from_node, to_node))
         return ret
 
-    # TODO: HERE
-    # TODO: figure out transitions with the same target state (issue of switch?)
-    # TODO: figure out transitions with the same source state (issue of under-definedness? parallel poisson processes)
     def update_node(self, rng_key, params, node, in_edges, out_edges):
-        compartment = switch(
-            [
-                # S -> {S, I}:
-                lambda: cond(in_edges["sum"][self.INFECTION] > 0, 1, 0),
-                # I -> {I, R}:
-                lambda: cond(jax.random.bernoulli(rng_key, params["gamma"]), 2, 1),
-                # R -> {R}:
-                2,
-            ],
-            node[self.STATE],
-        )
+        if not self.transitions:
+            return {self.state_key: node[self.state_key]}
+        rngs = jax.random.split(rng_key, len(self.transitions))
+
+        def trans_time(i: int, t: PoissonTransition):
+            return cond(
+                node[self.state_key] == t.fi,
+                lambda: t.sample_transition_time(
+                    rngs[i], params, node, in_edges, out_edges
+                ),
+                jnp.inf,
+            )
+
+        times = jnp.array([trans_time(i, t) for i, t in enumerate(self.transitions)])
         return {
-            self.state_key: compartment,
-            self.INFECTED: node[self.INFECTED] + out_edges["sum"][self.INFECTION],
+            self.state_key: cond(
+                jnp.min(times) < params[self.delta_t_key],
+                self.to_states[jnp.argmin(times)],
+                node[self.state_key],
+            )
         }

@@ -4,23 +4,20 @@ import jax.numpy as jnp
 from ..jax_utils import cond, switch
 from ..network_process import OperationBase, ProcessStateData
 from ..network_process.operations.compartmental import (
-    GenericCompartmentalUpdateOp,
-    Transition,
+    PoissonCompartmentalUpdateOp,
+    PoissonTransition,
+    BinaryPoissonTransition,
 )
 from ..utils import PRNGKey, PytreeDict
 
 
-class _SIUpdateOp(GenericCompartmentalUpdateOp):
-    def __init__(
-        self, prefix="", delta_t_key="delta_t", state_key="compartment", reinfect=False
-    ):
+class _SIUpdateOp(PoissonCompartmentalUpdateOp):
+    def __init__(self, prefix="", delta_t_key="delta_t", state_key="compartment"):
         transitions = (
-            Transition("S", "I", "I", binary=True, param_key=f"{prefix}edge_beta"),
+            BinaryPoissonTransition(
+                "S", "I", "I", rate_key=f"{prefix}edge_infection_rate"
+            ),
         )
-        if reinfect:
-            transitions = transitions + (
-                Transition("R", "S", param_key=f"{prefix}rho"),
-            )
         super().__init__(
             compartments=("S", "I"),
             delta_t_key=delta_t_key,
@@ -30,17 +27,23 @@ class _SIUpdateOp(GenericCompartmentalUpdateOp):
         )
 
 
-class _SIRUpdateOp(GenericCompartmentalUpdateOp):
+class _SIRUpdateOp(PoissonCompartmentalUpdateOp):
     def __init__(
-        self, prefix="", delta_t_key="delta_t", state_key="compartment", reinfect=False
+        self,
+        prefix="",
+        delta_t_key="delta_t",
+        state_key="compartment",
+        immunity_loss=False,
     ):
         transitions = (
-            Transition("S", "I", "I", binary=True, param_key=f"{prefix}edge_beta"),
-            Transition("I", "R", param_key=f"{prefix}gamma"),
+            BinaryPoissonTransition(
+                "S", "I", "I", rate_key=f"{prefix}edge_infection_rate"
+            ),
+            PoissonTransition("I", "R", rate_key=f"{prefix}recovery_rate"),
         )
-        if reinfect:
+        if immunity_loss:
             transitions = transitions + (
-                Transition("R", "S", param_key=f"{prefix}rho"),
+                PoissonTransition("R", "S", rate_key=f"{prefix}immunity_loss_rate"),
             )
         super().__init__(
             compartments=("S", "I", "R"),
@@ -51,18 +54,24 @@ class _SIRUpdateOp(GenericCompartmentalUpdateOp):
         )
 
 
-class _SEIRUpdateOp(GenericCompartmentalUpdateOp):
+class _SEIRUpdateOp(PoissonCompartmentalUpdateOp):
     def __init__(
-        self, prefix="", delta_t_key="delta_t", state_key="compartment", reinfect=False
+        self,
+        prefix="",
+        delta_t_key="delta_t",
+        state_key="compartment",
+        immunity_loss=False,
     ):
         transitions = (
-            Transition("S", "E", "I", binary=True, param_key=f"{prefix}edge_beta"),
-            Transition("E", "I", param_key=f"{prefix}alpha"),
-            Transition("I", "R", param_key=f"{prefix}gamma"),
+            BinaryPoissonTransition(
+                "S", "E", "I", rate_key=f"{prefix}edge_infection_rate"
+            ),
+            PoissonTransition("E", "I", rate_key=f"{prefix}infectious_rate"),
+            PoissonTransition("I", "R", rate_key=f"{prefix}recovery_rate"),
         )
-        if reinfect:
+        if immunity_loss:
             transitions = transitions + (
-                Transition("R", "S", param_key=f"{prefix}rho"),
+                PoissonTransition("R", "S", rate_key=f"{prefix}immunity_loss_rate"),
             )
         super().__init__(
             compartments=("S", "E", "I", "R"),

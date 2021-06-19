@@ -22,7 +22,7 @@ class NetworkProcess:
 
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
-        self._run_jit = jax.jit(self._run, static_argnames=["tracing"])
+        self._run_jit = jax.jit(self._run, static_argnames=["tracing", "jit"])
         self._traced = 0
         self._tr = Tracer(tracing=False)
         self._tr.log_line("<Never traced>")
@@ -35,9 +35,13 @@ class NetworkProcess:
         steps_array = jnp.arange(step0, step0 + steps, dtype=jnp.int32)
         state_data = state.as_pytree()
         if jit:
-            state_update, records = self._run_jit(state_data, steps_array, True)
+            state_update, records = self._run_jit(
+                state_data, steps_array, tracing=True, jit=True
+            )
         else:
-            state_update, records = self._run(state_data, steps_array, False)
+            state_update, records = self._run(
+                state_data, steps_array, tracing=False, jit=False
+            )
         return state.copy_updated(state_update, [records])
 
     def trace_log(self):
@@ -57,19 +61,30 @@ class NetworkProcess:
             new_state.block_on_all()
 
     def _run(
-        self, state: ProcessStateData, steps_array: jnp.DeviceArray, tracing: bool
+        self,
+        state: ProcessStateData,
+        steps_array: jnp.DeviceArray,
+        tracing: bool,
+        jit: bool,
     ):
-        """Returns (new_state, all_records_pytree). JIT-able."""
+        """Returns (new_state, all_records_pytree). JIT-able when jit=True."""
         if tracing:
             msg = f"Tracing {self} with n={state.n}, m={state.m}, steps={steps_array.shape[0]}"
             self._tr = Tracer(tracing=True)
             self._traced += 1
             log.debug(msg)
-        return jax.lax.scan(
-            lambda s, i: self._run_step(s, i),
-            state,
-            steps_array,
-        )
+        if jit:
+            return jax.lax.scan(
+                lambda s, i: self._run_step(s, i),
+                state,
+                steps_array,
+            )
+        else:
+            rs = []
+            for si in steps_array:
+                state, r = self._run_step(state, si)
+                rs.append(r)
+            return state, jax.tree_multimap(jnp.stack, *rs)
 
     def _run_step(self, state: ProcessStateData, step: jnp.int32):
         """Returns (new_state, record_pytree). JIT-able."""
@@ -82,7 +97,7 @@ class NetworkProcess:
         # NB: this shuld be a noop with correct external step numbering
         state.params_pytree["step"] = step
 
-        # Run all the update steps, updating the state
+        # Run all the update steps, updating the staself._run_step(s, si)te
         state = self._run_update_edges(state)
         state = self._run_update_nodes(state)
         state = self._run_update_params(state, orig_state)
@@ -197,8 +212,8 @@ class NetworkProcess:
         for agg_op, agg_name, zval in (
             (jax.lax.scatter_add, "sum", 0),
             (jax.lax.scatter_mul, "prod", 1),
-            (jax.lax.scatter_min, "min", -np.inf),
-            (jax.lax.scatter_max, "max", np.inf),
+            (jax.lax.scatter_min, "min", np.inf),
+            (jax.lax.scatter_max, "max", -np.inf),
         ):
             in_edges_agg[agg_name] = jax.tree_util.tree_map(
                 lambda a: scatter_op(agg_op, zval, a, state.edges[:, 1]),

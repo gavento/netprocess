@@ -11,7 +11,7 @@ from ..network_process.operations.compartmental import (
 from ..utils import PRNGKey, PytreeDict
 
 
-class _SIUpdateOp(PoissonCompartmentalUpdateOp):
+class SIUpdateOp(PoissonCompartmentalUpdateOp):
     def __init__(self, prefix="", delta_t_key="delta_t", state_key="compartment"):
         transitions = (
             BinaryPoissonTransition(
@@ -27,7 +27,7 @@ class _SIUpdateOp(PoissonCompartmentalUpdateOp):
         )
 
 
-class _SIRUpdateOp(PoissonCompartmentalUpdateOp):
+class SIRUpdateOp(PoissonCompartmentalUpdateOp):
     def __init__(
         self,
         prefix="",
@@ -54,7 +54,7 @@ class _SIRUpdateOp(PoissonCompartmentalUpdateOp):
         )
 
 
-class _SEIRUpdateOp(PoissonCompartmentalUpdateOp):
+class SEIRUpdateOp(PoissonCompartmentalUpdateOp):
     def __init__(
         self,
         prefix="",
@@ -64,7 +64,7 @@ class _SEIRUpdateOp(PoissonCompartmentalUpdateOp):
     ):
         transitions = (
             BinaryPoissonTransition(
-                "S", "E", "I", rate_key=f"{prefix}edge_infection_rate"
+                "S", "E", "I", rate_key=f"{prefix}edge_expose_rate"
             ),
             PoissonTransition("E", "I", rate_key=f"{prefix}infectious_rate"),
             PoissonTransition("I", "R", rate_key=f"{prefix}recovery_rate"),
@@ -80,58 +80,3 @@ class _SEIRUpdateOp(PoissonCompartmentalUpdateOp):
             aux_prefix=prefix,
             transitions=transitions,
         )
-
-
-class SIRUpdateOp(OperationBase):
-    def __init__(
-        self,
-        state_key="compartment",
-        infected_key="infected",
-        infection_key="_infection",
-    ):
-        self.STATE = state_key
-        self.INFECTED = infected_key
-        self.INFECTION = infection_key
-
-    def prepare_state_pytrees(self, state):
-        state.nodes_pytree.setdefault(self.STATE, jnp.zeros(state.n, dtype=jnp.int32))
-        if not self.INFECTED.startswith("_"):
-            state.nodes_pytree.setdefault(
-                self.INFECTED, jnp.zeros(state.n, dtype=jnp.int32)
-            )
-        state.params_pytree.setdefault("edge_beta", 0.05)
-        state.params_pytree.setdefault("gamma", 0.1)
-        state.params_pytree.setdefault("delta_t", 1.0)
-        assert state.params_pytree["delta_t"] < 1.000001
-
-    def update_edge(self, rng_key, params, edge, from_node, to_node):
-        infection = cond(
-            jnp.logical_and(from_node[self.STATE] == 1, to_node[self.STATE] == 0),
-            lambda: jnp.int32(jax.random.bernoulli(rng_key, params["edge_beta"])),
-            0,
-        )
-        return {self.INFECTION: infection}
-
-    def update_node(self, rng_key, params, node, in_edges, out_edges):
-        compartment = switch(
-            [
-                # S -> {S, I}:
-                lambda: cond(in_edges["sum"][self.INFECTION] > 0, 1, 0),
-                # I -> {I, R}:
-                lambda: cond(jax.random.bernoulli(rng_key, params["gamma"]), 2, 1),
-                # R -> {R}:
-                2,
-            ],
-            node[self.STATE],
-        )
-        return {
-            self.STATE: compartment,
-            self.INFECTED: node[self.INFECTED] + out_edges["sum"][self.INFECTION],
-        }
-
-
-class ComputeImmediateROp:
-    def create_record(
-        self, rng_key: PRNGKey, state: ProcessStateData, orig_state: ProcessStateData
-    ) -> PytreeDict:
-        return {}, {"immediate_R_mean": mean, "immediate_R_samples": count}

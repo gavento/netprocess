@@ -56,7 +56,7 @@ class BinaryPoissonTransition(PoissonTransition):
     edge_activated_time_key = attr.ib(kw_only=True, default=None)
 
     def _init_for_operation(self, index: int, op: "PoissonCompartmentalUpdateOp"):
-        super()._init_for_operation(op)
+        super()._init_for_operation(index, op)
         self.s, self.si = op._lookup_compartment(self.s)
         if self.edge_activated_time_key is None:
             self.edge_activated_time_key = (
@@ -73,6 +73,7 @@ class BinaryPoissonTransition(PoissonTransition):
             lambda: jax.random.exponential(rng_key) / params[self.rate_key],
             jnp.float32(jnp.inf),
         )
+        print(time)
 
         return {self.edge_activated_time_key: time}
 
@@ -80,6 +81,7 @@ class BinaryPoissonTransition(PoissonTransition):
         self, _rng_key, _params, _node, in_edges: PytreeDict, _out_edges
     ) -> jnp.float32:
         """Sample the transition delay of the transition"""
+        print(in_edges["min"][self.edge_activated_time_key])
         return in_edges["min"][self.edge_activated_time_key]
 
 
@@ -126,10 +128,10 @@ class PoissonCompartmentalUpdateOp(OperationBase):
         assert state.params_pytree[self.delta_t_key] < 1.000001
 
         for t in self.transitions:
-            if t.param_key is not None:
+            if t.rate_key is not None:
                 if t.default_rate is not None:
-                    state.params_pytree.setdefault(t.param_key, t.default_rate)
-                assert t.param_key in state.params_pytree
+                    state.params_pytree.setdefault(t.rate_key, t.default_rate)
+                assert t.rate_key in state.params_pytree
 
     def update_edge(self, rng_key, params, edge, from_node, to_node):
         """

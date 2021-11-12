@@ -100,3 +100,7 @@ def test_custom_process():
     # Check underscored are ommited
     assert "_nope" not in sb1.nodes_pytree
     assert "_nope" not in sb1.edges_pytree
+
+    # Also test the computed degrees
+    assert (sb1.nodes_pytree["in_deg"] == jnp.array([1, 2, 1, 1])).all()
+    assert (sb1.nodes_pytree["out_deg"] == jnp.array([2, 1, 2, 0])).all()

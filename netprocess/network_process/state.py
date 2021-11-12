@@ -116,6 +116,11 @@ class ProcessState:
             self.edges_pytree["i"] = jnp.arange(self.m, dtype=jnp.int32)
         if "i" not in self.nodes_pytree:
             self.nodes_pytree["i"] = jnp.arange(self.n, dtype=jnp.int32)
+        if "out_deg" not in self.nodes_pytree:
+            self.nodes_pytree["out_deg"] = jnp.bincount(self.edges[:, 0], length=self.n)
+        if "in_deg" not in self.nodes_pytree:
+            self.nodes_pytree["in_deg"] = jnp.bincount(self.edges[:, 1], length=self.n)
+
         # Chunked stats records
         self._record_chunks = list(record_chunks)
         self._ensure_ndarrays()

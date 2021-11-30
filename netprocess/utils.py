@@ -4,9 +4,12 @@ import time
 import typing
 
 import jax.numpy as jnp
+import numpy as np
 
-Pytree = typing.Any
-PytreeDict = typing.Dict[str, typing.Any]
+Pytree = typing.Union[
+    typing.List["Pytree"], typing.Tuple["Pytree"], "PytreeDict", np.ndarray
+]
+PytreeDict = typing.Dict[str, Pytree]
 PRNGKey = jnp.ndarray
 
 log = logging.getLogger(__name__)
@@ -24,12 +27,18 @@ class KeyOrValue:
         self.value = None
         self.default = None
 
-        if isinstance(key_or_value, str):
+        if isinstance(key_or_value, KeyOrValue):
+            self.key = key_or_value.key
+            self.value = key_or_value.value
+            self.default = key_or_value.default
+            assert default is None
+            assert dtype is None or dtype == key_or_value.value.dtype
+        elif isinstance(key_or_value, str):
             self.key = key_or_value
             if default is not None:
-                self.default = jnp.ndarray(default, dtype=dtype)
+                self.default = jnp.array(default, dtype=dtype)
         else:
-            self.value = jnp.ndarray(key_or_value, dtype=dtype)
+            self.value = jnp.array(key_or_value, dtype=dtype)
             if default is not None:
                 raise Exception("Warning: Do not combine a value with a default")
 
@@ -54,6 +63,9 @@ class KeyOrValue:
         if self.key is None:
             return f"{self.value}"
         return self.key
+
+
+KeyOrValueT = typing.Union[KeyOrValue, str, int, float, np.ndarray]
 
 
 def update_dict_disjoint(d: dict, update: dict):

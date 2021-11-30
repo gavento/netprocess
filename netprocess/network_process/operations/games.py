@@ -76,7 +76,7 @@ class EpsilonErrorPolicy(PlayerPolicyBase):
         return z
 
 
-class DiscreteGame(OperationBase):
+class PureStrategyGame(OperationBase):
     """
     For directed or undirected graphs
     For games on undirected graphs, use antisymmetric payoffs, e.g. U1(a1,a2)=U1(a2,a1).

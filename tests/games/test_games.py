@@ -31,8 +31,8 @@ def test_policies():
 
 def test_payoffs():
     p = games.EpsilonErrorPolicy()
-    g1 = games.DiscreteGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
-    g2 = games.DiscreteGame(
+    g1 = games.PureStrategyGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
+    g2 = games.PureStrategyGame(
         ["C", "D"], jnp.array([[[4, 4], [0, 5]], [[5, 0], [1, 1]]]), p
     )
     assert g1.payouts.value.shape != g2.payouts.value.shape
@@ -51,7 +51,7 @@ def test_discrete_game():
     net = Network.from_graph(net_g)
 
     p = games.SoftmaxPolicy(beta="beta")
-    g = games.DiscreteGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
+    g = games.PureStrategyGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
     np = network_process.NetworkProcess([g])
     s = np.new_state(net, seed=43, params_pytree={"beta": 1.0})
     s = np.run(s, steps=10, jit=True)

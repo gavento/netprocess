@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 
@@ -6,8 +7,9 @@ import h5py
 import hdf5plugin
 import networkx as nx
 import numpy as np
+from netprocess.utils.types import PytreeDict
 
-from ..utils import file_utils
+from ..utils import file_utils, utils
 
 
 @attr.s
@@ -20,7 +22,7 @@ class Network:
     attribs: dict = attr.ib(factory=dict)
 
     REQUIRED_ATTRIBS = ["n", "m", "directed"]
-    EDGES_PATH = "edges/_from_to"
+    EDGES_PATH = "edges"
 
     @classmethod
     def open(cls, json_path: Path):
@@ -53,14 +55,17 @@ class Network:
     def h5_file(self):
         """Lazily opened H5 file for network data."""
         if self._h5_file is None:
-            self._h5_file = h5py.File(self.h5_path, mode="a")
+            if self.h5_path is None:
+                self._h5_file = h5py.File(io.BytesIO(), mode="w")
+            else:
+                self._h5_file = h5py.File(self.h5_path, mode="a")
         return self._h5_file
 
     @property
     def network(self):
         """Lazily loaded (Di)Graph instance from the H5 file."""
         if self._network is None:
-            self._network = nx.DiGraph() if self["digraph"] else nx.Graph()
+            self._network = nx.DiGraph() if self["directed"] else nx.Graph()
             self._network.add_nodes_from(range(self["n"]))
             self._network.add_edges_from(self.edges)
         return self._network
@@ -69,6 +74,9 @@ class Network:
         """
         Write/update JSON and flush the H5 file without closing it (if open).
         """
+        if self.json_path is None:
+            raise ValueError(f"Error: can't write a Network created without path.")
+
         with utils.open_file(self.json_path, mode="wt") as f:
             json.dump(utils.jsonize(self.attribs), f, indent=indent)
             f.write("\n")
@@ -91,20 +99,21 @@ class Network:
     @classmethod
     def from_edges(
         cls,
-        json_path: Path,
         n: int,
         edges: np.ndarray,
-        digraph: bool,
+        directed: bool,
+        json_path: Path = None,
         *,
-        label="",
-        origin={},
+        label: str = "",
+        origin: dict = {},
     ) -> "Network":
         """Create a Network instance from a list of edges.
 
         Does not write the instance to disk yet.
         """
-        json_path = Path(json_path)
-        assert not json_path.exists()
+        if not json_path is None:
+            json_path = Path(json_path)
+            assert not json_path.exists()
         net = cls._new_only_paths(json_path)
         m = edges.shape[0]
         assert edges.shape == (m, 2)
@@ -115,7 +124,7 @@ class Network:
         net.attribs["created"] = utils.now_isofmt()
         net.attribs["n"] = n
         net.attribs["m"] = m
-        net.attribs["digraph"] = digraph
+        net.attribs["directed"] = directed
         net.attribs["label"] = label
         net.attribs["stats"] = {}
         net.attribs["origin"] = origin
@@ -123,18 +132,19 @@ class Network:
         return net
 
     @classmethod
-    def from_graph(cls, json_path: Path, g: nx.Graph, label="") -> "Network":
+    def from_graph(
+        cls, g: nx.Graph, json_path: Path = None, *, label: str = ""
+    ) -> "Network":
         g = nx.convert_node_labels_to_integers(g)
-        json_path = Path(json_path)
         if g.size() == 0:
             edges = np.zeros((0, 2), dtype=np.int32)
         else:
             edges = np.array(g.edges(), dtype=np.int32)
         net = cls.from_edges(
-            json_path,
             n=g.order(),
             edges=edges,
-            digraph=isinstance(g, nx.DiGraph),
+            directed=isinstance(g, nx.DiGraph),
+            json_path=json_path,
             label=label,
         )
         net._network = g
@@ -151,14 +161,36 @@ class Network:
     @classmethod
     def _new_only_paths(cls, json_path: Path):
         """Return a Network instance without opening the H5 data file nor the JSON info file."""
+        if json_path is None:
+            return cls(
+                base_path=None,
+                json_path=None,
+                h5_path=None,
+            )
+
         json_path = Path(json_path)
-        base_path = utils.file_basic_path(json_path, ".json")
+        base_path = file_utils.file_basic_path(json_path, ".json")
         h5_path = base_path.with_name(base_path.name + ".h5")
         return cls(
             base_path=base_path,
             json_path=json_path,
             h5_path=h5_path,
         )
+
+    def h5_as_pytree(self, root_path="/", required=False) -> PytreeDict:
+        """Get (a subtree of) the h5 file as a nested dict of ndarrays.
+
+        Returns {} if group not found (unless `required` is set)."""
+        if root_path not in self.h5_file and not required:
+            return {}
+
+        d = {}
+        g = self.h5_file[root_path]
+        for k, i in g.items():
+            if isinstance(i, h5py._hl.group.Group):
+                d[k] = self.h5_as_pytree(i.name)
+            else:
+                d[k] = i[:]
 
     def add_array(self, name: str, array_data: np.ndarray, compress: bool = True):
         """Add an array to the H5 data file"""

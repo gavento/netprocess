@@ -1,25 +1,28 @@
 import jax.numpy as jnp
 import jax
 import networkx as nx
-from netprocess import network_process
-from netprocess.data import Network, network
+from networkx.generators import directed
+from netprocess import Network, NetworkProcess
+from netprocess.operations import OperationBase
 
 
 def _new_state(process):
-    net = Network(
-        edges=jnp.array([(0, 2), (2, 1), (2, 3), (0, 1), (1, 0)]), meta=dict(n=4)
+    net = Network.from_edges(
+        n=4,
+        edges=jnp.array([(0, 2), (2, 1), (2, 3), (0, 1), (1, 0)]),
+        directed=True,
     )
 
     return process.new_state(
         net,
         seed=42,
-        nodes_pytree={
+        node_props={
             "x": jnp.array([[1, 2], [3, 4], [5, 6], [7, 8]]),
             "y": jnp.array([0.1, 0.2, 0.3, 0.4]),
             "indeg": jnp.zeros(net.n, dtype=jnp.int32),
             "outdeg": jnp.zeros(net.n, dtype=jnp.int32),
         },
-        edges_pytree={
+        edge_props={
             "aa": jnp.array([1.0, 2.0, 3.0, 4.0, 5.0]),
             "stat": jnp.array([10.0, 20.0, 30.0, 40.0, 50.0]),
         },
@@ -27,10 +30,10 @@ def _new_state(process):
 
 
 def test_nop_process():
-    np = network_process.NetworkProcess([network_process.OperationBase()])
+    np = NetworkProcess([OperationBase()])
 
     n0 = Network.from_graph(nx.complete_graph(4))
-    sa0 = np.new_state(n0, seed=32, params_pytree={"beta": 1.5})
+    sa0 = np.new_state(n0, seed=32, params={"beta": 1.5})
     sa1 = np.run(sa0, steps=4, jit=False)
     assert sa1.params_pytree["beta"] == 1.5
 
@@ -53,7 +56,7 @@ def test_nop_process():
 
 def test_custom_process():
     # Full message passing
-    class TestOp(network_process.OperationBase):
+    class TestOp(OperationBase):
         def update_edge(self, rng_key, params, edge, from_node, to_node):
             return {
                 "aa": edge["aa"] + from_node["y"],
@@ -84,7 +87,7 @@ def test_custom_process():
         def create_record(self, rng_key, state, orig_state):
             return {"a_rec": state.params_pytree["_a"] * state.edges_pytree["aa"][0]}
 
-    np = network_process.NetworkProcess([TestOp()])
+    np = NetworkProcess([TestOp()])
     sb0 = _new_state(np)
     sb1 = np.run(sb0, steps=1)
     print(np.trace_log())

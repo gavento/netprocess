@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
 
-from ...utils import PytreeDict, PRNGKey
-from ..state import ProcessState, ProcessStateData
+from ..utils import PytreeDict, PRNGKey
+from ..process.state import ProcessState, ProcessStateData
 
 
 class OperationBase:

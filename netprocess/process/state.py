@@ -3,9 +3,8 @@ import collections
 import jax
 import jax.numpy as jnp
 
-from .. import jax_utils
-from ..data import Network
-from ..utils import Pytree, PytreeDict
+from ..network import Network
+from ..utils import Pytree, PytreeDict, jax_utils
 
 
 class ProcessStateData(

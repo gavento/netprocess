@@ -1,25 +1,21 @@
 import logging
 import random
-import time
-import typing
 
 import jax
 import jax.numpy as jnp
-import networkx as nx
 import numpy as np
 
-from ..data import Network
+from ..network import Network
 from ..utils import PRNGKey, PytreeDict
 from .state import ProcessState, ProcessStateData, _filter_check_merge
 from .tracing import Tracer
+from ..operations import OperationBase
 
 log = logging.getLogger(__name__)
 
 
 class NetworkProcess:
     def __init__(self, operations):
-        from .operations import OperationBase
-
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
         self._run_jit = jax.jit(self._run, static_argnames=["tracing", "jit"])
@@ -279,33 +275,33 @@ class NetworkProcess:
         network: Network,
         *,
         seed=None,
-        params_pytree={},
-        nodes_pytree={},
-        edges_pytree={},
+        params: PytreeDict = {},
+        node_props: PytreeDict = {},
+        edge_props: PytreeDict = {},
     ):
         """
         Create a new ProcessState with initial pytree elements for all operations.
 
         `seed` may be jax PRNGKey, a 64 bit number (used as a seed) or None (randomize).
-        The given pytrees are used as overrides over the Network pytrees (those are untouched).
+        The given param/sprops are used as overrides over the Network pytrees (those are untouched).
         """
         if seed is None:
             seed = random.randint(0, 1 << 64 - 1)
-        if isinstance(seed, (jnp.DeviceArray, np.ndarray)):
+        if isinstance(seed, (jnp.ndarray, np.ndarray)):
             assert seed.shape == (2,)
             assert seed.dtype == jnp.int32
             rng_key = jnp.array(seed)
         else:
             rng_key = jax.random.PRNGKey(seed)
 
-        # Note: all pytree elements are converted to jax arrays later in the state
-        # Note: all pytrees are properly copied later in the state
+        # Note: all pytree elements are converted to jax arrays later in the state constructor
+        # Note: all pytrees are properly copied later in the state constructor
         state = ProcessState(
             rng_key,
             network=network,
-            params_pytree=dict(network.params_pytree, **params_pytree),
-            nodes_pytree=dict(network.nodes_pytree, **nodes_pytree),
-            edges_pytree=dict(network.edges_pytree, **edges_pytree),
+            params_pytree=dict(network.h5_as_pytree("/params"), **params),
+            nodes_pytree=dict(network.h5_as_pytree("/node_props"), **node_props),
+            edges_pytree=dict(network.h5_as_pytree("/edge_props"), **edge_props),
             process=self,
         )
         # Prepare state for operations

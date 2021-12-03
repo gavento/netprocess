@@ -3,9 +3,9 @@ from typing import List, Union
 import jax
 import jax.numpy as jnp
 
-from ...utils import PRNGKey, PytreeDict
+from ..utils import PRNGKey, PytreeDict
 from .base import OperationBase
-from ..state import ProcessState, ProcessStateData
+from ..process.state import ProcessState, ProcessStateData
 
 
 class AdvanceTimeOp(OperationBase):

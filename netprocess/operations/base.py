@@ -1,12 +1,8 @@
-import jax
-import jax.numpy as jnp
-
 from ..utils import PytreeDict, PRNGKey
-from ..process.state import ProcessState, ProcessStateData
 
 
 class OperationBase:
-    def prepare_state_pytrees(self, state: ProcessState):
+    def prepare_state_pytrees(self, state: "netprocess.process.ProcessState"):
         """
         Prepare the (freshly created) state pytrees to be ready for this op.
 
@@ -63,7 +59,10 @@ class OperationBase:
         return {}
 
     def update_params(
-        self, rng_key: PRNGKey, state: ProcessStateData, orig_state: ProcessStateData
+        self,
+        rng_key: PRNGKey,
+        state: "netprocess.process.ProcessStateData",
+        orig_state: "netprocess.process.ProcessStateData",
     ) -> PytreeDict:
         """
         Compute and return the param updates.
@@ -75,7 +74,10 @@ class OperationBase:
         return {}
 
     def create_record(
-        self, rng_key: PRNGKey, state: ProcessStateData, orig_state: ProcessStateData
+        self,
+        rng_key: PRNGKey,
+        state: "netprocess.process.ProcessStateData",
+        orig_state: "netprocess.process.ProcessStateData",
     ) -> PytreeDict:
         return {}
         """

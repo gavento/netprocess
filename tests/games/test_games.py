@@ -1,12 +1,9 @@
 import jax
 import jax.numpy as jnp
-from jax.numpy import array as a
 import networkx as nx
 import pytest
-from netprocess import network_process
-from netprocess.data import Network, network
-from netprocess.network_process import operations
-from netprocess.network_process.operations import games
+from jax.numpy import array as a
+from netprocess import Network, NetworkProcess, games, operations
 
 
 def test_policies():
@@ -45,17 +42,17 @@ def test_payoffs():
                 assert g1.get_payoff(a1, a2, pl) == g2.get_payoff(a1, a2, pl)
 
 
-def test_discrete_game():
+def test_pure_strategy_game():
     N = 30
     net_g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=42)
     net = Network.from_graph(net_g)
 
     p = games.SoftmaxPolicy(beta="beta")
     g = games.PureStrategyGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
-    np = network_process.NetworkProcess([g])
-    s = np.new_state(net, seed=43, params_pytree={"beta": 1.0})
+    np = NetworkProcess([g])
+    s = np.new_state(net, seed=43, params={"beta": 1.0})
     s = np.run(s, steps=10, jit=True)
-    assert sum(s.nodes_pytree["action"]) > 0.99 * N
+    assert sum(s.nodes_pytree["action"]) > 0.9 * N
     s.params_pytree["beta"] = 0.05
     s = np.run(s, steps=10, jit=True)
     print(s.nodes_pytree["action"])

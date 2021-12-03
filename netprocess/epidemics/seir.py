@@ -1,14 +1,15 @@
 import jax
 import jax.numpy as jnp
 
-from ..jax_utils import cond, switch
-from ..network_process import OperationBase, ProcessStateData
-from ..network_process.operations.compartmental import (
+from ..operations import OperationBase
+from ..process.state import ProcessStateData
+from ..utils import PRNGKey, PytreeDict
+from ..utils.jax_utils import cond, switch
+from .compartmental import (
+    BinaryPoissonTransition,
     PoissonCompartmentalUpdateOp,
     PoissonTransition,
-    BinaryPoissonTransition,
 )
-from ..utils import PRNGKey, PytreeDict
 
 
 class SIUpdateOp(PoissonCompartmentalUpdateOp):

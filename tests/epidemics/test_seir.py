@@ -1,16 +1,14 @@
-from netprocess.network_process import operations
-import jax
 import jax.numpy as jnp
 import networkx as nx
-from netprocess import epi, network_process, data
+from netprocess import NetworkProcess, Network, epidemics, operations
 
 
 def test_si_model():
     N = 10
     g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=42)
-    net = data.Network.from_graph(g)
-    np = network_process.NetworkProcess([epi.SIUpdateOp()])
-    s = np.new_state(net, params_pytree={"edge_infection_rate": 0.3}, seed=43)
+    net = Network.from_graph(g)
+    np = NetworkProcess([epidemics.SIUpdateOp()])
+    s = np.new_state(net, params={"edge_infection_rate": 0.3}, seed=43)
 
     # Few passes without any infections
     print(s.nodes_pytree["compartment"])
@@ -32,10 +30,10 @@ def test_si_model():
 def test_sir_model():
     N = 10
     g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=46)
-    net = data.Network.from_graph(g)
-    np = network_process.NetworkProcess([epi.SIRUpdateOp(), operations.AdvanceTimeOp()])
+    net = Network.from_graph(g)
+    np = NetworkProcess([epidemics.SIRUpdateOp(), operations.AdvanceTimeOp()])
     s = np.new_state(
-        net, params_pytree={"edge_infection_rate": 0.6, "recovery_rate": 0.5}, seed=43
+        net, params={"edge_infection_rate": 0.6, "recovery_rate": 0.5}, seed=43
     )
 
     # Few passes without any infections
@@ -60,11 +58,11 @@ def test_sir_model():
 def test_seir_model():
     N = 10
     g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=47)
-    net = data.Network.from_graph(g)
-    np = network_process.NetworkProcess([epi.SEIRUpdateOp(immunity_loss=True)])
+    net = Network.from_graph(g)
+    np = NetworkProcess([epidemics.SEIRUpdateOp(immunity_loss=True)])
     s = np.new_state(
         net,
-        params_pytree={
+        params={
             "edge_expose_rate": 0.7,
             "infectious_rate": 1.0,
             "recovery_rate": 0.8,
@@ -87,6 +85,6 @@ def test_seir_model():
     print(s.nodes_pytree["compartment"])
     assert sum(s.nodes_pytree["compartment"] == 0) in range(2, 5)
     assert sum(s.nodes_pytree["compartment"] == 1) in range(2, 5)
-    assert sum(s.nodes_pytree["compartment"] == 2) in range(2, 4)
-    assert sum(s.nodes_pytree["compartment"] == 3) in range(1, 4)
+    assert sum(s.nodes_pytree["compartment"] == 2) in range(2, 5)
+    assert sum(s.nodes_pytree["compartment"] == 3) in range(1, 3)
     assert np._traced == 1  ## Not essential, testing tracing-once property

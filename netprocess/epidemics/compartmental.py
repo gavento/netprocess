@@ -1,13 +1,13 @@
 import copy
+from typing import Tuple
 
 import attr
 import jax
 import jax.numpy as jnp
 
-from ...jax_utils import cond, switch
-from ...utils import PytreeDict, PRNGKey
-from .base import OperationBase
-from typing import Tuple
+from ..operations.base import OperationBase
+from ..utils import PRNGKey, PytreeDict
+from ..utils.jax_utils import cond, switch
 
 
 @attr.s

@@ -3,33 +3,34 @@ import collections
 import jax
 import jax.numpy as jnp
 
+from netprocess.utils.types import PRNGKey
+
 from ..network import Network
 from ..utils import Pytree, PytreeDict, jax_utils
 
 
-class ProcessStateData(
-    collections.namedtuple(
-        "ProcessStateData",
-        ["rng_key", "edges", "params_pytree", "nodes_pytree", "edges_pytree", "n", "m"],
-    )
-):
-    __slots__ = ()
+@dataclass(frozen=True)
+class ProcessStateData:
+    """
+    Auxiliary structure holding data for a state to be passed to JIT-able functions.
+    """
 
-    @property
-    def _shape_n(self):
-        "Return `n` based on the shapes, or None if no node data is present."
-        leaves = jax.tree_leaves(self.nodes_pytree)
-        if leaves:
-            return leaves[0].shape[0]
-        return None
+    rng_key: PRNGKey
+    edges: jnp.ndarray
+    params: PytreeDict
+    node_props: PytreeDict
+    edge_props: PytreeDict
+    n: jnp.int32
+    m: jnp.int32
 
-    @property
-    def _shape_m(self):
-        "Return `m` based on the shapes, or None if no edge data is present."
-        leaves = jax.tree_leaves(self.edges_pytree)
-        if leaves:
-            return leaves[0].shape[0]
-        return None
+    def copy(self):
+        """Copy the state, reusing all the ndarrays and immutable objects."""
+        return dataclass.replace(
+            self,
+            params=jax.tree_map(lambda x: x, self.params),
+            node_props=jax.tree_map(lambda x: x, self.node_props),
+            edge_props=jax.tree_map(lambda x: x, self.edge_props),
+        )
 
     @classmethod
     def _pad_pytree_to(_cls, pt: Pytree, old_n, n=None):
@@ -58,14 +59,6 @@ class ProcessStateData(
         _, edges2 = self._pad_pytree_to(self.edges, self.m, m)
         return self._replace(
             edges=edges2, nodes_pytree=nt2, n=n2, edges_pytree=et2, m=m2
-        )
-
-    def copy(self):
-        """Copy the state, reusing all the DeviceArrays and immutable objects."""
-        return self._replace(
-            params_pytree=jax.tree_map(lambda x: x, self.params_pytree),
-            nodes_pytree=jax.tree_map(lambda x: x, self.nodes_pytree),
-            edges_pytree=jax.tree_map(lambda x: x, self.edges_pytree),
         )
 
 

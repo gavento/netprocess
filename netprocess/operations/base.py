@@ -1,4 +1,52 @@
 from ..utils import PytreeDict, PRNGKey
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class EdgeUpdateData:
+    """
+    Structure holding data for node update operations.
+
+    `from_node` and `to_node` are the property pytrees of source and tagret nodes.
+    In undirected graphs, the order of from/to is arbitrary.
+    """
+
+    rng_key: PRNGKey
+    params: PytreeDict
+    edge: PytreeDict
+    from_node: PytreeDict
+    to_node: PytreeDict
+
+
+@dataclass(frozen=True)
+class NodeUpdateData:
+    """
+    Structure holding data for node update operations.
+
+    `in_edges`, `out_edges` and `edges` are nested aggregates of edge properties and the dicts returned by update_edge.
+    `edges` is aggregated over the union of `in_edges` and `out_edges`.
+    Currently, "sum", "prod", "min", and "max" are passed. Note that for bool dtypes, "sum" and "prod" is of dtype `int32`.
+
+    Use as: `data.in_edges["max"]["some_property"]`
+    """
+
+    rng_key: PRNGKey
+    params: PytreeDict
+    node: PytreeDict
+    in_edges: PytreeDict
+    out_edges: PytreeDict
+    edges: PytreeDict
+
+
+@dataclass(frozen=True)
+class ParamUpdateData:
+    """
+    Structure holding data for global parameter update operations.
+    """
+
+    rng_key: PRNGKey
+    new_state: "netprocess.process.ProcessStateData"
+    prev_state: "netprocess.process.ProcessStateData"
 
 
 class OperationBase:
@@ -6,20 +54,13 @@ class OperationBase:
         """
         Prepare the (freshly created) state pytrees to be ready for this op.
 
-        In particular, add all updated and required arrays to
+        In particular, add all updated and required ndarrays to
         state.params_pytree, state.nodes_pytree and state.edges_pytree,
-        check their shape and type if they exist.
+        optionally check their shape and type if they exist.
         """
         pass
 
-    def update_edge(
-        self,
-        rng_key: PRNGKey,
-        params: PytreeDict,
-        edge: PytreeDict,
-        from_node: PytreeDict,
-        to_node: PytreeDict,
-    ) -> PytreeDict:
+    def update_edge(self, data: EdgeUpdateData) -> PytreeDict:
         """
         Compute and return the edge updates and messages to from_node and to_node.
 
@@ -28,20 +69,11 @@ class OperationBase:
         in the same step, underscored items are not persistet to next step.
         Must always return the same key sets! Must be JITtable.
 
-        `params`, `edge`, `from_node` and `to_node` are all dict pytrees.
-
         Must be JIT-able.
         """
         return {}
 
-    def update_node(
-        self,
-        rng_key: PRNGKey,
-        params: PytreeDict,
-        node: PytreeDict,
-        in_edges: PytreeDict,
-        out_edges: PytreeDict,
-    ) -> PytreeDict:
+    def update_node(self, data: NodeUpdateData) -> PytreeDict:
         """
         Compute and return the node update items.
 
@@ -49,44 +81,29 @@ class OperationBase:
         All items are seen by all the later update functions
         in the same step, underscored items are not persistet to next step.
 
-        `params` and `node` are dict pytrees. `in_edges` and `out_edges` are nested
-        aggregates of update_edge pytrees. Currently, "sum", "prod", "min", and "max"
-        are passed. Note that unused aggregates are dropped during JIT.
-        Also note that for bool dtypes, "sum" and "prod" is of dtype `int32`.
-
         Must be JIT-able.
         """
         return {}
 
-    def update_params(
-        self,
-        rng_key: PRNGKey,
-        state: "netprocess.process.ProcessStateData",
-        orig_state: "netprocess.process.ProcessStateData",
-    ) -> PytreeDict:
+    def update_params(self, data: ParamUpdateData) -> PytreeDict:
         """
         Compute and return the param updates.
 
         Return a pytree dictionary.
         Must always return the same key sets. Must be JIT-able.
-        `state` includes temporary (underscored) properties.
+        Both `data.new_state` and `data_prev_state` include temporary (underscored) properties.
         """
         return {}
 
-    def create_record(
-        self,
-        rng_key: PRNGKey,
-        state: "netprocess.process.ProcessStateData",
-        orig_state: "netprocess.process.ProcessStateData",
-    ) -> PytreeDict:
-        return {}
+    def create_record(self, data: ParamUpdateData) -> PytreeDict:
         """
         Compute and return the param updates and any records.
 
         Return `record_pytree`.
         Must always return the same key sets. Must be JIT-able.
-        `state` includes temporary (underscored) properties.
+        Both `data.new_state` and `data_prev_state` include temporary (underscored) properties.
         """
+        return {}
 
     def __repr__(self):
         return f"<{self.__class__.__name__}>"

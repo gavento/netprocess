@@ -4,7 +4,7 @@ import typing
 import jax.numpy as jnp
 import numpy as np
 
-from .types import PytreeDict
+from netprocess.utils.prop_tree import PropTree
 
 log = logging.getLogger(__name__)
 
@@ -36,27 +36,23 @@ class KeyOrValue:
             if default is not None:
                 raise Exception("Warning: Do not combine a value with a default")
 
-    def get_from(self, pytree: PytreeDict):
+    def get_from(self, pt: PropTree):
         if self.value is not None:
             return self.value
-        return pytree[self.key]
+        return pt[self.key]
 
-    def ensure_in(self, pytree: PytreeDict, repeat_times=None):
-        if (
-            self.key is not None
-            and self.key not in pytree
-            and not self.key.startswith("_")
-        ):
+    def ensure_in(self, pt: PropTree, repeat_times=None):
+        if self.key is not None and self.key not in pt and not self.key.startswith("_"):
             if self.default is not None:
                 if repeat_times is None:
-                    pytree[self.key] = self.default
+                    pt[self.key] = self.default
                 else:
-                    pytree[self.key] = jnp.expand_dims(self.default, 0).repeat(
+                    pt[self.key] = jnp.expand_dims(self.default, 0).repeat(
                         repeat_times, 0
                     )
             else:
                 raise Exception(
-                    f"Property {self.key!r} without a default missing in pytree"
+                    f"Property {self.key!r} without a default missing in PropTree"
                 )
 
     def __str__(self):

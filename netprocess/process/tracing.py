@@ -3,7 +3,6 @@ import logging
 import typing
 from typing import Any
 
-from jax._src.tree_util import tree_unflatten
 from ..utils.prop_tree import PropTree
 
 log = logging.getLogger(__name__)
@@ -29,13 +28,18 @@ class TracingPropTreeWrapper(PropTree):
         self._prefix = _prefix
 
     def __getitem__(self, key: typing.Union[str, tuple]) -> Any:
-        v = self._pt[k]
-        p = f"{self._prefix}.{'.'.join(key)}".removeprefix(".")
+        if isinstance(key, str):
+            key = key.split(".")
+        v = self._pt[key]
+        p = f"{self._prefix}.{'.'.join(key)}".lstrip(".")
         if not isinstance(v, PropTree):
             self._target.add(p)
             return v
         else:
             return TracingPropTreeWrapper(v, _target=self._target, _prefix=p)
+
+    def __getattr__(self, key):
+        return self[key]
 
     def copy(self):
         raise NotImplemented("Forbidden for TracingPropTreeWrapper")

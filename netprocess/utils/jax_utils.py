@@ -3,8 +3,6 @@ import typing
 import jax
 import jax.numpy as jnp
 
-from netprocess.utils.prop_tree import PropTree
-
 from .types import Pytree
 
 

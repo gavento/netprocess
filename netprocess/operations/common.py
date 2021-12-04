@@ -1,9 +1,4 @@
-from typing import List, Union
-
-import jax
-import jax.numpy as jnp
-
-from ..utils import PRNGKey, PytreeDict, KeyOrValue, KeyOrValueT
+from ..utils import KeyOrValue, KeyOrValueT
 from .base import OperationBase, ParamUpdateData, EdgeUpdateData, NodeUpdateData
 from ..process.state import ProcessState, ProcessStateData
 
@@ -21,17 +16,17 @@ class Fun(OperationBase):
         self.node_f = node_f
         self.params_f = params_f
 
-    def update_edges(self, data: EdgeUpdateData) -> PytreeDict:
+    def update_edges(self, data: EdgeUpdateData) -> dict:
         if self.edge_f is None:
             return {}
         return self.edge_f(data)
 
-    def update_nodes(self, data: NodeUpdateData) -> PytreeDict:
+    def update_nodes(self, data: NodeUpdateData) -> dict:
         if self.node_f is None:
             return {}
         return self.node_f(data)
 
-    def update_params(self, data: ParamUpdateData) -> PytreeDict:
+    def update_params(self, data: ParamUpdateData) -> dict:
         if self.params_f is None:
             return {}
         return self.params_f(data)
@@ -55,14 +50,14 @@ class IncrementParam(OperationBase):
         self.value = KeyOrValue(value_key, default=default, dtype=dtype)
         self.increment = KeyOrValue(increment, dtype=dtype)
 
-    def prepare_state_pytrees(self, state):
-        self.value.ensure_in(state.params)
-        self.increment.ensure_in(state.params)
+    def prepare_state_data(self, data: ProcessStateData):
+        self.value.ensure_in(data)
+        self.increment.ensure_in(data)
 
-    def update_params(self, data: ParamUpdateData) -> PytreeDict:
+    def update_params(self, data: ParamUpdateData) -> dict:
         return {
-            self.value.key: self.value.get_from(data.prev_state.params)
-            + self.increment.get_from(data.prev_state.params)
+            self.value.key: self.value.get_from(data.prev_state)
+            + self.increment.get_from(data.prev_state)
         }
 
 

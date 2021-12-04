@@ -9,13 +9,18 @@ import numpy as np
 from . import jax_utils
 
 
+from typing import get_type_hints
+
+
 @jax.tree_util.register_pytree_node_class
 class PropTree(MutableMapping):
     """
     A tree-of-dictionaries structure, all leaves being JAX arrays or scalars.
     """
 
-    ATYPES = (
+    __slots__ = ("_items",)
+    _FROZEN = False
+    _ATYPES = (
         jnp.ndarray,
         np.ndarray,
         int,
@@ -35,24 +40,45 @@ class PropTree(MutableMapping):
         if isinstance(items, PropTree):
             items = items._items
         for k, v in items.items():
-            self[k] = v
+            self._setitem_f(k, v)
         for k, v in kw_items.items():
-            self[k] = v
+            self._setitem_f(k, v)
 
     def __getitem__(self, key: typing.Union[str, tuple]) -> Any:
         k, pt = self._rec(key)
         return pt._items[k]
 
-    def __setitem__(self, key: typing.Union[str, tuple], val: Any) -> Any:
+    def _setitem_f(self, key: typing.Union[str, tuple], val: Any):
+        "Internal operation, also works on FROZEN instances"
         k, pt = self._rec(key, creating=True)
-        pt._items[k] = self._convert_val(val)
+        pt._items[k] = pt._convert_val(val, dict_type=pt._type_for_child(k))
 
-    def __len__(self):
-        return len(tuple(iter(self)))
+    def __setitem__(self, key: typing.Union[str, tuple], val: Any):
+        if self._FROZEN:
+            raise Exception(
+                f"Trying to set item {key!r} in frozen {self.__class__.__name__}"
+            )
+        self._setitem_f(key, val)
 
-    def __delitem__(self, key: typing.Union[str, tuple]):
+    def __getattr__(self, key):
+        th = get_type_hints(self.__class__)
+        if key in th:
+            return self[key]
+        raise AttributeError(
+            f"Key {key!r} is not a valid attribute for class {self.__class__}"
+        )
+
+    def _delitem_f(self, key: typing.Union[str, tuple]):
+        "Internal operation, also works on FROZEN instances"
         k, pt = self._rec(key)
         del pt._items[k]
+
+    def __delitem__(self, key: typing.Union[str, tuple]):
+        if self._FROZEN:
+            raise Exception(
+                f"Trying to delete item {key!r} in frozen {self.__class__.__name__}"
+            )
+        self._delitem_f(key)
 
     def __iter__(self):
         for k, v in self._items.items():
@@ -62,34 +88,40 @@ class PropTree(MutableMapping):
             else:
                 yield k
 
+    def __len__(self):
+        return len(tuple(iter(self)))
+
     @classmethod
-    def _convert_val(cls, v: Any) -> Any:
+    def _convert_val(cls, v: Any, dict_type=None) -> Any:
         if isinstance(v, PropTree):
-            return PropTree(**v._items)
+            return v.copy()
         elif isinstance(v, dict):
-            return PropTree(**v)
-        elif isinstance(v, cls.ATYPES):
+            return (dict_type or PropTree)(v)
+        elif isinstance(v, cls._ATYPES):
             return jax_utils.ensure_array(v)
         else:
-            raise TypeError(
-                f"Invalid type {type(v)} passed to {self.__class__.__name__}: {v!r}"
-            )
+            return v  ####TODO
+            raise TypeError(f"Invalid type {type(v)} passed to {cls.__name__}: {v!r}")
 
     def copy(self) -> "PropTree":
-        """Return a deep copy of self"""
+        """Return a deep copy of self, also works on frozen items"""
         s = self.__class__()
-        for k, v in self.leaf_items():
-            s[k] = v
+        for k, v in self.items():
+            s._setitem_f(k, v)
         return s
 
     def _replace(self, updates: dict = {}, **kw_updates) -> "PropTree":
         """Return a deep copy with some replaced properties"""
         s2 = self.copy()
         for k, v in updates.items():
-            s2[k] = v
+            s2._setitem_f(k, v)
         for k, v in kw_updates.items():
-            s2[k] = v
+            s2._setitem_f(k, v)
         return s2
+
+    def _type_for_child(self, key):
+        th = get_type_hints(self.__class__)
+        return th.get(key)
 
     def _rec(
         self, key: typing.Union[str, tuple], creating: bool = False
@@ -101,7 +133,12 @@ class PropTree(MutableMapping):
             return key[0], self
         if key[0] not in self._items:
             if creating:
-                self._items[key[0]] = self.__class__()
+                t = self._type_for_child(key[0])
+                if t is not None:
+                    assert issubclass(t, PropTree)
+                else:
+                    t = PropTree
+                self._items[key[0]] = t()  ## NB: Somehow resolve sub-tree types?
             else:
                 raise KeyError(f"key {key[0]!r} not found in PropTree")
         if not isinstance(self._items[key[0]], PropTree):
@@ -115,7 +152,7 @@ class PropTree(MutableMapping):
         if k not in pt:
             if callable(val):
                 val = val()
-            pt[k] = self._convert_val(val)
+            pt[k] = pt._convert_val(val, dict_type=pt._type_for_child(k))
         return pt[k]
 
     def top_keys(self):
@@ -160,7 +197,7 @@ class PropTree(MutableMapping):
 
     def tree_flatten(self):
         ks = list(self._items.keys())
-        return (self._items[k] for k in ks), ks
+        return tuple(self._items[k] for k in ks), ks
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):

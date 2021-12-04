@@ -1,28 +1,54 @@
 import logging
 
+import typing
+from typing import Any
+
+from jax._src.tree_util import tree_unflatten
+from ..utils.prop_tree import PropTree
+
 log = logging.getLogger(__name__)
 
 
-class TracingDict(dict):
+class TracingPropTreeWrapper(PropTree):
     """
-    Utility dict wrapper to track accessed keys.
-
-    Iteration is ignored.
+    Utility PropTree wrapper to track accessed keys.
     """
 
-    def __init__(self, d: dict, target: set, prefix: str = "", suffix: str = ""):
-        super().__init__(d)
-        self._target = target
-        self._prefix = prefix
-        self._suffix = suffix
+    __slots__ = ("_pt", "_target", "_prefix")
 
-    def _as_dict(self):
-        return dict(self.items())
+    def __init__(
+        self,
+        prop_tree: PropTree,
+        *,
+        _target: set = None,
+        _prefix: str = "",
+    ):
+        super().__init__()  ## The PropTree itself is empty, we hold reference to the wrapped object
+        self._pt = prop_tree
+        self._target = _target
+        self._prefix = _prefix
 
-    def __getitem__(self, key):
-        r = super().__getitem__(key)
-        self._target.add(f"{self._prefix}{key!s}{self._suffix}")
-        return r
+    def __getitem__(self, key: typing.Union[str, tuple]) -> Any:
+        v = self._pt[k]
+        p = f"{self._prefix}.{'.'.join(key)}".removeprefix(".")
+        if not isinstance(v, PropTree):
+            self._target.add(p)
+            return v
+        else:
+            return TracingPropTreeWrapper(v, _target=self._target, _prefix=p)
+
+    def copy(self):
+        raise NotImplemented("Forbidden for TracingPropTreeWrapper")
+
+    def tree_flatten(self):
+        f, a = self._pt.tree_flatten()
+        return (f, (a, self._pt.__class__, self._target, self._prefix))
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        a, c, _target, _prefix = aux_data
+        pt = c.tree_unflatten(a, children)
+        return cls(pt, _target=_target, _prefix=_prefix)
 
 
 class Tracer:
@@ -38,24 +64,9 @@ class Tracer:
     def reset_access(self):
         self.accessed = set()
 
-    def TD(self, d, label, depth=1):
-        "Wrap a PytreeDict in TracingDict, recursively if `depth`>1"
-        if (not self.tracing) or depth <= 0:
-            return d
-        if depth == 1:
-            return TracingDict(d, self.accessed, f"{label}[", "]")
-        return {k: self.TD(v, f"{label}[{k}]", depth - 1) for k, v in d.items()}
-
-    def TS(self, state, label=""):
-        "Wrap all ProcessStateData fields in TacingDict, return a new state."
-        if not self.tracing:
-            return state
-        return state._replace(
-            **{
-                k: self.TD(getattr(state, k), label + k[0].upper())
-                for k in ["node_props", "edge_props", "params"]
-            }
-        )
+    def wrap(self, pt: PropTree, prefix: str = "") -> TracingPropTreeWrapper:
+        "Wrap a PropTree as immutable TracingPropTreeWrapper"
+        return TracingPropTreeWrapper(pt, _target=self.accessed, _prefix=prefix)
 
     def log_line(self, msg):
         self.trace_log.append(msg)

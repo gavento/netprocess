@@ -3,6 +3,39 @@ import jax.numpy as jnp
 import pytest
 import functools
 from netprocess.utils import jax_utils, utils
+from netprocess.utils.prop_tree import PropTree
+
+
+def test_prop_tree():
+    p = PropTree()
+    assert len(p) == 0
+
+    p = PropTree({"a.b": 42, "a.c": (2, 3, 4)}, x=False)
+    assert p["a"]["b"] == 42
+    assert p["a", "b"] == 42
+    assert p["a.b"] == 42
+    assert p["a.c"][0] == 2
+    assert len(p) == 2
+    assert p.leaf_len() == 3
+    assert set(p.leaf_keys()) == set(["a.b", "a.c", "x"])
+    assert len(p["a"]) == 2
+    assert len(jax.tree_util.tree_leaves(p)) == 3
+    assert jax.tree_util.tree_map(lambda x: x + 1, p)["a.c"][0] == 3
+    p["c.d"] = (13,)
+    assert p["c"]["d"][0] == 13
+    assert "a" in p
+    assert "b" in p["a"]
+    assert "z" not in p
+
+    def uncalled():
+        assert False
+
+    assert p.setdefault("e-2/3", lambda: 18) == 18
+    assert p.setdefault("e-2/3", 19) == 18
+    assert p.setdefault("e-2/3", uncalled) == 18
+
+    p2 = jax.tree_util.tree_map(lambda x: x, p)
+    assert list(p2.leaf_items()) == list(p.leaf_items())
 
 
 def test_integrality():

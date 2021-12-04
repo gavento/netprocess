@@ -12,6 +12,7 @@ class PT1(PropTree):
 
 
 class PT0(PropTree):
+    _OTHER_PROPS = False
     x: PT1
     y: PT1
     w: int
@@ -22,6 +23,7 @@ def test_prop_tree_types():
     assert isinstance(p1, PT1)
     assert not isinstance(p1.a, PT1)
     assert isinstance(p1.b, jnp.ndarray)
+    p1["nonex"] = 13
 
     p0 = PT0()
     p0["x.a.foo"] = 42
@@ -30,6 +32,8 @@ def test_prop_tree_types():
     assert not isinstance(p0.x.a, PT1)
     assert not isinstance(p0.x.a, PT0)
     assert p0.x.a["foo"] == 42
+    with pytest.raises(AttributeError):
+        p0["nonex"] = 13
 
 
 def test_prop_tree():

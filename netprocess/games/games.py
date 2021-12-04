@@ -6,8 +6,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from ..operations import OperationBase
-from ..utils import KeyOrValue, KeyOrValueT, PRNGKey, PytreeDict
+from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
+from ..process import ProcessStateData
+from ..utils import KeyOrValue, KeyOrValueT, PRNGKey, PropTree
 from .policies import PlayerPolicyBase
 
 
@@ -71,8 +72,8 @@ class PureStrategyGame(OperationBase):
     def n(self):
         return len(self.action_set)
 
-    def get_payoff(self, a1, a2, player, params: PytreeDict = None) -> jnp.DeviceArray:
-        p = self.payouts.get_from(params)
+    def get_payoff(self, a1, a2, player, data: PropTree = None) -> jnp.DeviceArray:
+        p = self.payouts.get_from(data)
         assert p.shape == (self.n, self.n, 2) or p.shape == (self.n, self.n)
         if len(p.shape) == 3:
             return p[a1, a2, player]
@@ -81,53 +82,53 @@ class PureStrategyGame(OperationBase):
                 player == 0, lambda _: p[a1, a2], lambda _: p[a2, a1], None
             )
 
-    def prepare_state_pytrees(self, state):
+    def prepare_state_data(self, state: ProcessStateData):
         """
         Prepare the state for running the process.
 
         Ensures the state has all state variables, missing parameters get defaults (and raise errors if none),
         probabilities are adjusted to delta_t, jax arrays are ensured for all pytree vals.
         """
-        if self.action_key not in state.node_props:
-            state.node_props[self.action_key] = jnp.zeros(state.n, dtype=jnp.int32)
+        if self.action_key not in state.node:
+            state.node[self.action_key] = jnp.zeros(state.n, dtype=jnp.int32)
 
-        self.payouts.ensure_in(state.params)
-        ps = self.payouts.get_from(state.params).shape
+        self.payouts.ensure_in(state)
+        ps = self.payouts.get_from(state).shape
         assert ps == (self.n, self.n, 2) or ps == (self.n, self.n)
-        self.update_probability.ensure_in(state.params)
-        self.player_policy.prepare_state_pytrees(state)
+        self.update_probability.ensure_in(state)
+        self.player_policy.prepare_state_data(state)
 
-    def update_edge(self, rng_key, params, edge, from_node, to_node):
+    def update_edge(self, data: EdgeUpdateData) -> PropTree:
         """
         Compute the payoffs for all actions vs the the current action.
         """
         return {
             self._actions_payoff_from_node_key: self.get_payoff(
-                slice(None), to_node[self.action_key], 0
+                slice(None), data.tgt_node[self.action_key], 0
             ),
             self._actions_payoff_to_node_key: self.get_payoff(
-                from_node[self.action_key], slice(None), 1
+                data.src_node[self.action_key], slice(None), 1
             ),
         }
 
-    def update_node(self, rng_key, params, node, in_edges, out_edges):
+    def update_node(self, data: NodeUpdateData) -> PropTree:
         actions_payoff = (
-            in_edges["sum"][self._actions_payoff_to_node_key]
-            + out_edges["sum"][self._actions_payoff_from_node_key]
+            data.in_edges["sum"][self._actions_payoff_to_node_key]
+            + data.out_edges["sum"][self._actions_payoff_from_node_key]
         )
         if self.player_mean_payout:
-            deg = jnp.maximum(node["in_deg"] + node["out_deg"], 1)
+            deg = jnp.maximum(data.node["deg"], 1)
             actions_payoff = actions_payoff / deg
-        rng_key0, rng_key1, rng_key2 = jax.random.split(rng_key, 3)
+        prng_key0, prng_key1, prng_key2 = jax.random.split(data.prng_key, 3)
         do_update = jax.random.bernoulli(
-            rng_key0, self.update_probability.get_from(params)
+            prng_key0, self.update_probability.get_from(data)
         )
         action_probs = self.player_policy.compute_policy(
-            actions_payoff, rng_key1, params, node, in_edges, out_edges
+            actions_payoff, data._replace(prng_key=prng_key1)
         )
-        new_action = jax.random.choice(rng_key2, self.n, p=action_probs)
+        new_action = jax.random.choice(prng_key2, self.n, p=action_probs)
         action = jax.lax.cond(
-            do_update, lambda _: new_action, lambda _: node[self.action_key], None
+            do_update, lambda _: new_action, lambda _: data.node[self.action_key], None
         )
 
         return {
@@ -136,5 +137,5 @@ class PureStrategyGame(OperationBase):
             self._current_regret_key: jnp.max(actions_payoff) - actions_payoff[action],
             self.action_key: action,
             self._updated_action_key: jnp.int32(do_update),
-            self._changed_action_key: jnp.int32(action != node[self.action_key]),
+            self._changed_action_key: jnp.int32(action != data.node[self.action_key]),
         }

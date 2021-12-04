@@ -26,6 +26,13 @@ class ProcessStateData(PropTree):
       * src, dst
     """
 
+    n: jnp.int32
+    m: jnp.int32
+    step: jnp.int32
+    prng_key: PRNGKey
+    edge: PropTree
+    node: PropTree
+
     @classmethod
     def from_network(
         cls, net: Network, prng_key: PRNGKey, **props
@@ -60,34 +67,10 @@ class ProcessStateData(PropTree):
 
     def _filter_underscored(self) -> "ProcessStateData":
         d2 = {}
-        for k in self.leaf_keys():
-            if not any(kp.startswith("_") in k.split(".")):
+        for k in self.keys():
+            if not any(kp.startswith("_") for kp in k.split(".")):
                 d2[k] = self[k]
         return self.__class__(d2)
-
-    @property
-    def n(self) -> jnp.int32:
-        return self["n"]
-
-    @property
-    def m(self) -> jnp.int32:
-        return self["m"]
-
-    @property
-    def step(self) -> jnp.int32:
-        return self["step"]
-
-    @property
-    def prng_key(self) -> PRNGKey:
-        return self["prng_key"]
-
-    @property
-    def edge(self) -> PropTree:
-        return self["edge"]
-
-    @property
-    def node(self) -> PropTree:
-        return self["node"]
 
     def _pad_to(self, n: int = None, m: int = None):
         """
@@ -117,10 +100,16 @@ class ProcessState:
         """
         Internal constructor, use NetworkProcess.new_state() or self.copy_updated to create.
         """
-        self._data = data
+        self.data = data
         self._network = network
         self._process = process
         self._record_chunks = list(record_chunks)
+
+    def __getattr__(self, key):
+        try:
+            return self.data[key]
+        except KeyError:
+            return super().__getattribute__(key)
 
     def _updated(self, new_data: ProcessStateData, new_records=()):
         """
@@ -133,8 +122,10 @@ class ProcessState:
         Note that state `m`, `n` and `edges` must stay the same.
         """
         assert isinstance(new_data, ProcessStateData)
+        assert isinstance(self.data, ProcessStateData)
         assert self.n == new_data.n
         assert self.m == new_data.m
+
         return ProcessState(
             data=new_data,
             network=self._network,
@@ -179,21 +170,8 @@ class ProcessState:
         """
         Block until all arrays are actually computed (does not copy them to CPU).
         """
-        for v in jax.tree_util.tree_leaves(self._data):
+        for v in jax.tree_util.tree_leaves(self.data):
             v.block_until_ready()
         if len(self._record_chunks) > 0:
             for v in jax.tree_util.tree_leaves(self._record_chunks[-1]):
                 v.block_until_ready()
-
-
-def _filter_check_merge(orig: PytreeDict, update: PytreeDict, name: str):
-    "Merge `update` items into a copy of `orig`, skip underscored, check existence."
-    update = {k: v for k, v in update.items() if not k.startswith("_")}
-    tgt = jax_utils.tree_copy(orig)
-    for k, v in update.items():
-        if k not in orig:
-            raise ValueError(
-                f"Key {k} of {name} update not present in orig: {list(orig.keys())}"
-            )
-        tgt[k] = jax_utils.tree_copy(v)
-    return tgt

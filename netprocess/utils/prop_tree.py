@@ -1,15 +1,12 @@
 import typing
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, get_type_hints
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from . import jax_utils
-
-
-from typing import get_type_hints
 
 
 @jax.tree_util.register_pytree_node_class

@@ -53,13 +53,13 @@ def test_sir_model():
     assert sum(s.node["compartment"] == 0) in range(2, 5)
     assert sum(s.node["compartment"] == 1) in range(3, 7)
     assert sum(s.node["compartment"] == 2) in range(1, 6)
-    assert abs(s.params["t"] - 8.0) < 1e-3
+    assert abs(s.data["t"] - 8.0) < 1e-3
     assert np._traced == 1  ## Not essential, testing tracing-once property
 
 
 def test_seir_model():
-    N = 10
-    g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=47)
+    N = 20
+    g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=40)
     net = Network.from_graph(g)
     np = NetworkProcess([epidemics.SEIRUpdateOp(immunity_loss=True)])
     s = np.new_state(
@@ -85,8 +85,8 @@ def test_seir_model():
     # Infection spread
     s = np.run(s, steps=5)
     print(s.node["compartment"])
-    assert sum(s.node["compartment"] == 0) in range(2, 5)
-    assert sum(s.node["compartment"] == 1) in range(2, 5)
-    assert sum(s.node["compartment"] == 2) in range(2, 5)
-    assert sum(s.node["compartment"] == 3) in range(1, 3)
+    assert sum(s.node["compartment"] == 0) in range(3, 10)
+    assert sum(s.node["compartment"] == 1) in range(3, 10)
+    assert sum(s.node["compartment"] == 2) in range(3, 10)
+    assert sum(s.node["compartment"] == 3) in range(2, 6)
     assert np._traced == 1  ## Not essential, testing tracing-once property

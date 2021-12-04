@@ -5,14 +5,10 @@ import attr
 import jax
 import jax.numpy as jnp
 
-from ..operations.base import (
-    OperationBase,
-    EdgeUpdateData,
-    NodeUpdateData,
-    ParamUpdateData,
-)
-from ..utils import PRNGKey, PytreeDict, KeyOrValueT, KeyOrValue
-from ..utils.jax_utils import cond, switch
+from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase
+from ..utils import KeyOrValue, KeyOrValueT, PRNGKey, PytreeDict
+from ..process import ProcessStateData
+from ..utils.jax_utils import cond
 
 
 class PoissonTransition:
@@ -39,7 +35,7 @@ class PoissonTransition:
 
     def sample_transition_time(self, data: NodeUpdateData) -> jnp.float32:
         """Sample the transition delay of this transition"""
-        return jax.random.exponential(data.rng_key) / self.rate.get_from(data.params)
+        return jax.random.exponential(data.prng_key) / self.rate.get_from(data.state)
 
     def update_edge(self, op, data: EdgeUpdateData) -> PytreeDict:
         """Add any temporary attributes to an edge (for binary transitions)"""
@@ -66,11 +62,11 @@ class BinaryPoissonTransition(PoissonTransition):
         """Sample the transition delay of the transition on a single edge"""
         time = cond(
             jnp.logical_and(
-                op.state.get_from(data.from_node) == self.si,
-                op.state.get_from(data.to_node) == self.fi,
+                op.state.get_from(data.src_node) == self.si,
+                op.state.get_from(data.tgt_node) == self.fi,
             ),
-            lambda: jax.random.exponential(data.rng_key)
-            / self.rate.get_from(data.params),
+            lambda: jax.random.exponential(data.prng_key)
+            / self.rate.get_from(data.state),
             jnp.float32(jnp.inf),
         )
         return {self.time_edge_activated.key: time}
@@ -110,45 +106,45 @@ class PoissonCompartmentalUpdateOp(OperationBase):
         else:
             raise TypeError
 
-    def prepare_state_pytrees(self, state):
+    def prepare_state_data(self, state: ProcessStateData):
         """
         Prepare the state for running the process.
 
         Ensures the state has all state variables, missing parameters get defaults (and raise errors if none),
         probabilities are adjusted to delta_t, jax arrays are ensured for all pytree vals.
         """
-        self.state.ensure_in(state.node_props, repeat_times=state.n)
-        self.delta_t.ensure_in(state.params)
+        self.state.ensure_in(state.node, repeat_times=state.n)
+        self.delta_t.ensure_in(state)
 
         for t in self.transitions:
-            t.rate.ensure_in(state.params)
+            t.rate.ensure_in(state)
 
     def update_edge(self, data: EdgeUpdateData) -> PytreeDict:
         """
         Run all binary transitions on the directed edge, recording each activation separately.
         """
         ret = {}
-        rngs = jax.random.split(data.rng_key, len(self.transitions))
+        rngs = jax.random.split(data.prng_key, len(self.transitions))
         for i, t in enumerate(self.transitions):
-            ret.update(t.update_edge(self, data._replace(rng_key=rngs[i])))
+            ret.update(t.update_edge(self, data._replace(prng_key=rngs[i])))
         return ret
 
     def update_node(self, data: NodeUpdateData) -> PytreeDict:
         if not self.transitions:
             return {self.state.key: self.state.get_from(data.node)}
-        rngs = jax.random.split(data.rng_key, len(self.transitions))
+        rngs = jax.random.split(data.prng_key, len(self.transitions))
 
         def trans_time(i: int, t: PoissonTransition):
             return cond(
                 self.state.get_from(data.node) == t.fi,
-                lambda: t.sample_transition_time(data._replace(rng_key=rngs[i])),
+                lambda: t.sample_transition_time(data._replace(prng_key=rngs[i])),
                 jnp.inf,
             )
 
         times = jnp.array([trans_time(i, t) for i, t in enumerate(self.transitions)])
         return {
             self.state.key: cond(
-                jnp.min(times) < self.delta_t.get_from(data.params),
+                jnp.min(times) < self.delta_t.get_from(data.state),
                 self.to_states[jnp.argmin(times)],
                 self.state.get_from(data.node),
             )

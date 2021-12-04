@@ -15,12 +15,13 @@ def test_prop_tree():
     assert p["a", "b"] == 42
     assert p["a.b"] == 42
     assert p["a.c"][0] == 2
-    assert len(p) == 2
-    assert p.leaf_len() == 3
-    assert set(p.leaf_keys()) == set(["a.b", "a.c", "x"])
+    assert p.top_len() == 2
+    assert len(p) == 3
+    assert set(p.keys()) == set(["a.b", "a.c", "x"])
     assert len(p["a"]) == 2
     assert len(jax.tree_util.tree_leaves(p)) == 3
     assert jax.tree_util.tree_map(lambda x: x + 1, p)["a.c"][0] == 3
+
     p["c.d"] = (13,)
     assert p["c"]["d"][0] == 13
     assert "a" in p
@@ -35,7 +36,7 @@ def test_prop_tree():
     assert p.setdefault("e-2/3", uncalled) == 18
 
     p2 = jax.tree_util.tree_map(lambda x: x, p)
-    assert list(p2.leaf_items()) == list(p.leaf_items())
+    assert list(p2.items()) == list(p.items())
 
 
 def test_integrality():

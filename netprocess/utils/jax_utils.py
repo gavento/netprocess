@@ -8,7 +8,7 @@ from .types import Pytree
 
 def ensure_array(a, dtype=None, concretize_types=True) -> jnp.ndarray:
     """Return a `DeviceArray` form of `a` with given dtype, NOP if already is."""
-    if not isinstance(a, jnp.DeviceArray):
+    if not isinstance(a, jnp.ndarray):
         a = jnp.array(a, dtype=dtype)
     elif dtype is not None and a.dtype != dtype:
         a = jnp.array(a, dtype=dtype)

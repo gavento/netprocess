@@ -20,6 +20,7 @@ class PropTree(MutableMapping):
 
     __slots__ = ("_items",)
     _FROZEN = False
+    _OTHER_PROPS = True
     _ATYPES = (
         jnp.ndarray,
         np.ndarray,
@@ -51,7 +52,12 @@ class PropTree(MutableMapping):
     def _setitem_f(self, key: typing.Union[str, tuple], val: Any):
         "Internal operation, also works on FROZEN instances"
         k, pt = self._rec(key, creating=True)
-        pt._items[k] = pt._convert_val(val, dict_type=pt._type_for_child(k))
+        t = pt._type_for_child(k)
+        if t is None and not pt._OTHER_PROPS:
+            raise AttributeError(
+                f"Key {k!r} is not among allowed props for {pt.__class__}"
+            )
+        pt._items[k] = pt._convert_val(val, dict_type=t)
 
     def __setitem__(self, key: typing.Union[str, tuple], val: Any):
         if self._FROZEN:
@@ -134,6 +140,10 @@ class PropTree(MutableMapping):
         if key[0] not in self._items:
             if creating:
                 t = self._type_for_child(key[0])
+                if not self._OTHER_PROPS and t is None:
+                    raise AttributeError(
+                        f"Key {key[0]!r} is not among allowed props for {self.__class__}"
+                    )
                 if t is not None:
                     assert issubclass(t, PropTree)
                 else:
@@ -150,6 +160,10 @@ class PropTree(MutableMapping):
     def setdefault(self, key: typing.Union[str, tuple], val: Any) -> Any:
         k, pt = self._rec(key, creating=True)
         if k not in pt:
+            if not pt._OTHER_PROPS and pt._type_for_child(k) is None:
+                raise AttributeError(
+                    f"Key {k!r} is not among allowed props for {pt.__class__}"
+                )
             if callable(val):
                 val = val()
             pt[k] = pt._convert_val(val, dict_type=pt._type_for_child(k))

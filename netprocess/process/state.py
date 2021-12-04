@@ -6,13 +6,14 @@ import jax.numpy as jnp
 from netprocess.utils.types import PRNGKey
 
 from ..network import Network
-from ..utils import Pytree, PytreeDict, jax_utils
+from ..utils import Pytree, PytreeDict, jax_utils, PRNGKey
+import typing
 
 
 @dataclasses.dataclass(frozen=True)
 class ProcessStateData:
     """
-    Auxiliary structure holding data for a state to be passed to JIT-able functions.
+    Structure holding array data for a state to be passed to JIT-able functions.
     """
 
     rng_key: PRNGKey
@@ -55,12 +56,20 @@ class ProcessStateData:
             return n, jax.tree_map(lambda a: a[:n], pt)
 
     def _pad_to(self, n=None, m=None):
-        """Return a copy of self padded or shortened to
-        N and/or M (whichever is given)"""
-        n2, nt2 = self._pad_pytree_to(self.node_props, self.n, n)
-        m2, et2 = self._pad_pytree_to(self.edge_props, self.m, m)
-        _, edges2 = self._pad_pytree_to(self.edges, self.m, m)
-        return self._replace(edges=edges2, node_props=nt2, n=n2, edge_props=et2, m=m2)
+        """
+        Return a copy of self padded or shortened to
+        N and/or M (whichever is given)
+        """
+        np = jax_utils.pad_pytree_to(self.node_props, self.n, n)
+        ep = jax_utils.pad_pytree_to(self.edge_props, self.m, m)
+        return self._replace(node_props=np, n=n, edge_props=ep, m=m)
+
+
+jax.tree_util.register_pytree_node(
+    ProcessStateData,
+    lambda p: (dataclasses.astuple(p), None),
+    lambda _a, d: ProcessStateData(*d),
+)
 
 
 class ProcessState:
@@ -238,13 +247,6 @@ class ProcessState:
         if len(self._record_chunks) > 0:
             for v in jax.tree_util.tree_leaves(self._record_chunks[-1]):
                 v.block_until_ready()
-
-
-jax.tree_util.register_pytree_node(
-    ProcessStateData,
-    lambda p: (dataclasses.astuple(p), None),
-    lambda _a, d: ProcessStateData(*d),
-)
 
 
 def _filter_check_merge(orig: PytreeDict, update: PytreeDict, name: str):

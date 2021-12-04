@@ -40,6 +40,21 @@ def ensure_pytree(
     )
 
 
+def pad_pytree_to(_cls, pt: Pytree, old_n: jnp.integer, new_n: jnp.integer) -> Pytree:
+    """
+    Pad or shrink first dim of all pytree leaves.
+    Return the new pytree.
+    """
+    if old_n < new_n:
+
+        def ext(a):
+            return jnp.pad(a, [(0, n - old_n)] + ([(0, 0)] * (len(a.shape) - 1)))
+
+        return jax.tree_map(ext, pt)
+    else:
+        return jax.tree_map(lambda a: a[:n], pt)
+
+
 def tree_copy(pytree):
     """
     Return a copy of the given pytree.

@@ -92,7 +92,7 @@ class NetworkProcess:
         orig_state = state
 
         # Set step number
-        state = state.copy()
+        state = state._replace()
         # NB: this shuld be a noop with correct external step numbering
         state.params["step"] = step
 

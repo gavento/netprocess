@@ -59,9 +59,13 @@ class ParamUpdateData:
 
 
 class OperationBase:
+    """
+    Base class for an operation in the network process.
+    """
+
     def prepare_state_pytrees(self, state: "netprocess.process.ProcessState"):
         """
-        Prepare the (freshly created) state pytrees to be ready for this op.
+        Prepare the (freshly created) `ProcessState` pytrees to be ready for this operation.
 
         In particular, add all updated and required ndarrays to
         state.params, state.node_props and state.edge_props,
@@ -99,16 +103,6 @@ class OperationBase:
         Compute and return the param updates.
 
         Return a pytree dictionary.
-        Must always return the same key sets. Must be JIT-able.
-        Both `data.new_state` and `data_prev_state` include temporary (underscored) properties.
-        """
-        return {}
-
-    def create_record(self, data: ParamUpdateData) -> PytreeDict:
-        """
-        Compute and return the param updates and any records.
-
-        Return `record_pytree`.
         Must always return the same key sets. Must be JIT-able.
         Both `data.new_state` and `data_prev_state` include temporary (underscored) properties.
         """

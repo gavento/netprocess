@@ -1,16 +1,32 @@
 import typing
+from collections.abc import MutableMapping
 from typing import Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
+from . import jax_utils
+
 
 @jax.tree_util.register_pytree_node_class
-class PropTree:
+class PropTree(MutableMapping):
     """
     A tree-of-dictionaries structure, all leaves being JAX arrays or scalars.
     """
+
+    ATYPES = (
+        jnp.ndarray,
+        np.ndarray,
+        int,
+        float,
+        bool,
+        np.integer,
+        np.floating,
+        np.bool_,
+        tuple,
+        list,
+    )
 
     def __init__(
         self, items: typing.Union[dict, "PropTree"] = {}, **kw_items: dict
@@ -23,20 +39,37 @@ class PropTree:
         for k, v in kw_items.items():
             self[k] = v
 
+    def __getitem__(self, key: typing.Union[str, tuple]) -> Any:
+        k, pt = self._rec(key)
+        return pt._items[k]
+
+    def __setitem__(self, key: typing.Union[str, tuple], val: Any) -> Any:
+        k, pt = self._rec(key, creating=True)
+        pt._items[k] = self._convert_val(val)
+
+    def __len__(self):
+        return len(tuple(iter(self)))
+
+    def __delitem__(self, key: typing.Union[str, tuple]):
+        k, pt = self._rec(key)
+        del pt._items[k]
+
+    def __iter__(self):
+        for k, v in self._items.items():
+            if isinstance(v, PropTree):
+                for k2 in v:
+                    yield f"{k}.{k2}"
+            else:
+                yield k
+
     @classmethod
     def _convert_val(cls, v: Any) -> Any:
         if isinstance(v, PropTree):
             return PropTree(**v._items)
         elif isinstance(v, dict):
             return PropTree(**v)
-        elif isinstance(v, jnp.ndarray):
-            return v
-        elif isinstance(v, np.ndarray):
-            return jnp.array(v)
-        elif isinstance(v, (int, float, bool, np.integer, np.floating, np.bool_)):
-            return jnp.array(v)
-        elif isinstance(v, tuple):
-            return jnp.array(v)
+        elif isinstance(v, cls.ATYPES):
+            return jax_utils.ensure_array(v)
         else:
             raise TypeError(
                 f"Invalid type {type(v)} passed to {self.__class__.__name__}: {v!r}"
@@ -44,7 +77,10 @@ class PropTree:
 
     def copy(self) -> "PropTree":
         """Return a deep copy of self"""
-        return self.__class__(**self._items)
+        s = self.__class__()
+        for k, v in self.leaf_items():
+            s[k] = v
+        return s
 
     def _replace(self, updates: dict = {}, **kw_updates) -> "PropTree":
         """Return a deep copy with some replaced properties"""
@@ -65,7 +101,7 @@ class PropTree:
             return key[0], self
         if key[0] not in self._items:
             if creating:
-                self._items[key[0]] = PropTree()
+                self._items[key[0]] = self.__class__()
             else:
                 raise KeyError(f"key {key[0]!r} not found in PropTree")
         if not isinstance(self._items[key[0]], PropTree):
@@ -73,21 +109,6 @@ class PropTree:
                 f"Indexing into both PropTree and the contained array is forbidden"
             )
         return self._items[key[0]]._rec(key[1:], creating=creating)
-
-    def __getitem__(self, key: typing.Union[str, tuple]) -> Any:
-        k, pt = self._rec(key)
-        return pt._items[k]
-
-    def __setitem__(self, key: typing.Union[str, tuple], val: Any) -> Any:
-        k, pt = self._rec(key, creating=True)
-        pt._items[k] = self._convert_val(val)
-
-    def __contains__(self, key: typing.Union[str, tuple]) -> bool:
-        try:
-            _ = self[key]
-        except KeyError:
-            return False
-        return True
 
     def setdefault(self, key: typing.Union[str, tuple], val: Any) -> Any:
         k, pt = self._rec(key, creating=True)
@@ -97,29 +118,17 @@ class PropTree:
             pt[k] = self._convert_val(val)
         return pt[k]
 
-    def keys(self):
+    def top_keys(self):
         return self._items.keys()
 
-    def items(self):
-        return self._items.items()
-
-    def __len__(self):
+    def top_len(self):
         return len(self._items)
 
-    def leaf_items(self):
-        for k, v in self._items.items():
-            if isinstance(v, PropTree):
-                for k2, v2 in v.leaf_items():
-                    yield f"{k}.{k2}", v2
-            else:
-                yield k, v
+    def top_items(self):
+        return self._items.items()
 
-    def leaf_keys(self):
-        for k, _v in self.leaf_items():
-            yield k
-
-    def leaf_len(self):
-        return len(tuple(self.leaf_items()))
+    def top_values(self):
+        return self._items.values()
 
     def nice_str(self, indent=2, _i0=0) -> str:
         s = []

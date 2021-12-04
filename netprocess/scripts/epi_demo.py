@@ -34,10 +34,10 @@ def epi_demo1(edge_beta, gamma, infect, nodes):
     with utils.logged_time("  Creating graph"):
         g = nx.random_graphs.barabasi_albert_graph(nodes, k)
     with utils.logged_time("  Creating state"):
-        state = np.new_state(g, params_pytree=params, seed=42)
+        state = np.new_state(g, params=params, seed=42)
         rng = jax.random.PRNGKey(43)
         comp = jnp.int32(jax.random.bernoulli(rng, infect / nodes, shape=[nodes]))
-        state.nodes_pytree["compartment"] = comp
+        state.node_props["compartment"] = comp
     with utils.logged_time("  Running model"):
         state2 = np.run(state, steps=100)
         state2.block_on_all()

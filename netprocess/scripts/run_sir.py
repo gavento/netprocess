@@ -37,9 +37,9 @@ def run_sir(edge_beta, gamma, infect, seed, output_prefix, network, steps, delta
     net = data.Network.load(network)
     log.info(f"Loaded {network!r} n={net.meta['n']}, m={net.meta['m']} (directed)")
 
-    net.params_pytree["edge_beta"] = edge_beta
-    net.params_pytree["gamma"] = gamma
-    net.params_pytree["delta_t"] = delta_t
+    net.params["edge_beta"] = edge_beta
+    net.params["gamma"] = gamma
+    net.params["delta_t"] = delta_t
 
     net.meta["sim_edge_beta"] = edge_beta
     net.meta["sim_gamma"] = edge_beta
@@ -54,19 +54,12 @@ def run_sir(edge_beta, gamma, infect, seed, output_prefix, network, steps, delta
             network_process.CountNodeTransitionsOp(states=3, key="compartment"),
         ]
     )
-    net.nodes_pytree["compartment"] = jnp.int32(
+    net.node_props["compartment"] = jnp.int32(
         jax.random.bernoulli(
             jax.random.PRNGKey(seed + 1), infect, shape=[net.meta["n"]]
         )
     )
-    state = process.new_state(
-        net.edges,
-        n=net.meta["n"],
-        seed=seed,
-        params_pytree=net.params_pytree,
-        nodes_pytree=net.nodes_pytree,
-        edges_pytree=net.edges_pytree,
-    )
+    state = process.new_state(net, seed=seed)
 
     with utils.logged_time("Running simulation"):
         state2 = process.run(state, steps=steps)

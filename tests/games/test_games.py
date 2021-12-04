@@ -52,9 +52,9 @@ def test_pure_strategy_game():
     np = NetworkProcess([g])
     s = np.new_state(net, seed=43, params={"beta": 1.0})
     s = np.run(s, steps=10, jit=True)
-    assert sum(s.nodes_pytree["action"]) > 0.9 * N
-    s.params_pytree["beta"] = 0.05
+    assert sum(s.node_props["action"]) > 0.9 * N
+    s.params["beta"] = 0.05
     s = np.run(s, steps=10, jit=True)
-    print(s.nodes_pytree["action"])
-    assert sum(s.nodes_pytree["action"]) < 0.8 * N
-    assert sum(s.nodes_pytree["action"]) > 0.5 * N
+    print(s.node_props["action"])
+    assert sum(s.node_props["action"]) < 0.8 * N
+    assert sum(s.node_props["action"]) > 0.5 * N

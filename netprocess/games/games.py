@@ -88,13 +88,13 @@ class PureStrategyGame(OperationBase):
         Ensures the state has all state variables, missing parameters get defaults (and raise errors if none),
         probabilities are adjusted to delta_t, jax arrays are ensured for all pytree vals.
         """
-        if self.action_key not in state.nodes_pytree:
-            state.nodes_pytree[self.action_key] = jnp.zeros(state.n, dtype=jnp.int32)
+        if self.action_key not in state.node_props:
+            state.node_props[self.action_key] = jnp.zeros(state.n, dtype=jnp.int32)
 
-        self.payouts.ensure_in(state.params_pytree)
-        ps = self.payouts.get_from(state.params_pytree).shape
+        self.payouts.ensure_in(state.params)
+        ps = self.payouts.get_from(state.params).shape
         assert ps == (self.n, self.n, 2) or ps == (self.n, self.n)
-        self.update_probability.ensure_in(state.params_pytree)
+        self.update_probability.ensure_in(state.params)
         self.player_policy.prepare_state_pytrees(state)
 
     def update_edge(self, rng_key, params, edge, from_node, to_node):

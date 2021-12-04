@@ -3,117 +3,147 @@ from typing import List, Union
 import jax
 import jax.numpy as jnp
 
-from ..utils import PRNGKey, PytreeDict
-from .base import OperationBase
+from ..utils import PRNGKey, PytreeDict, KeyOrValue, KeyOrValueT
+from .base import OperationBase, ParamUpdateData, EdgeUpdateData, NodeUpdateData
 from ..process.state import ProcessState, ProcessStateData
 
 
-class AdvanceTimeOp(OperationBase):
+class Fun(OperationBase):
     """
-    Operation that advances time param by the current delta_t.
+    Wrapper for functionally-defined operations.
 
-    NB: You probably want to use this last in the operation order.
+    Each of `edge_f`, `node_f`, and `params_f` takes the respective `EdgeUpdateData` etc. and
+    returns a dict of updated attributes.
+    """
+
+    def __init__(self, edge_f=None, node_f=None, params_f=None):
+        self.edge_f = edge_f
+        self.node_f = node_f
+        self.params_f = params_f
+
+    def update_edges(self, data: EdgeUpdateData) -> PytreeDict:
+        if self.edge_f is None:
+            return {}
+        return self.edge_f(data)
+
+    def update_nodes(self, data: NodeUpdateData) -> PytreeDict:
+        if self.node_f is None:
+            return {}
+        return self.node_f(data)
+
+    def update_params(self, data: ParamUpdateData) -> PytreeDict:
+        if self.params_f is None:
+            return {}
+        return self.params_f(data)
+
+
+class IncrementParam(OperationBase):
+    """
+    Operation that increments one param by another param or value.
+
+    Useful e.g. for incrementing counters or time passed.
     """
 
     def __init__(
         self,
-        t_key="t",
-        delta_t_key="delta_t",
+        value_key: str,
+        increment: KeyOrValueT = 1,
+        default=None,
+        dtype=None,
     ):
-        self.t_key = t_key
-        self.delta_t_key = delta_t_key
+        assert isinstance(value_key, str)
+        self.value = KeyOrValue(value_key, default=default, dtype=dtype)
+        self.increment = KeyOrValue(increment, dtype=dtype)
 
     def prepare_state_pytrees(self, state):
-        state.params_pytree.setdefault(self.delta_t_key, 1.0)
-        state.params_pytree.setdefault(self.t_key, 0.0)
+        self.value.ensure_in(state.params)
+        self.increment.ensure_in(state.params)
 
-    def update_params(self, _rng_key, state, _orig_state) -> PytreeDict:
-        params2 = jax.tree_map(lambda x: x, state.params_pytree)
-        params2[self.t_key] = (
-            state.params_pytree[self.t_key] + state.params_pytree[self.delta_t_key]
-        )
-        return params2
-
-
-class CountNodeStatesOp(OperationBase):
-    def __init__(
-        self, states: Union[int, List[str]], key: str = "state", dest: str = None
-    ):
-        if isinstance(states, int):
-            self.state_names = [f"S{i}" for i in range(states)]
-        else:
-            self.state_names = states
-        self.states = len(self.state_names)
-        self.key = key
-        self.dest = dest if dest is not None else f"{self.key}_count"
-
-    def create_record(
-        self,
-        rng_key: PRNGKey,
-        state: ProcessStateData,
-        orig_state: ProcessStateData,
-    ) -> PytreeDict:
-        counts = jnp.sum(
-            jax.nn.one_hot(state.nodes_pytree[self.key], self.states), axis=0
-        )
-        return {self.dest: counts}
-
-    def get_traces(self, state: ProcessState):
-        """
-        Return a dict `{trace_name: y_array}` for plotting.
-
-        Includes `"x": 0..s-1`.
-        """
-        data = state.all_records()[self.dest]
-        d = {s: data[:, i] for s, i in enumerate(self.state_names)}
-        d.update(x=jnp.arange(data.shape[0]))
-        return d
+    def update_params(self, data: ParamUpdateData) -> PytreeDict:
+        return {
+            self.value.key: self.value.get_from(data.prev_state.params)
+            + self.increment.get_from(data.prev_state.params)
+        }
 
 
-class CountNodeTransitionsOp(OperationBase):
-    def __init__(
-        self, states: Union[int, List[str]], key: str = "state", dest: str = None
-    ):
-        if isinstance(states, int):
-            self.state_names = [f"S{i}" for i in range(states)]
-        else:
-            self.state_names = states
-        self.states = len(self.state_names)
-        self.key = key
-        self.dest = dest if dest is not None else f"{self.key}_transitions"
+# class CountNodeStatesOp(OperationBase):
+#     def __init__(
+#         self, states: Union[int, List[str]], key: str = "state", dest: str = None
+#     ):
+#         if isinstance(states, int):
+#             self.state_names = [f"S{i}" for i in range(states)]
+#         else:
+#             self.state_names = states
+#         self.states = len(self.state_names)
+#         self.key = key
+#         self.dest = dest if dest is not None else f"{self.key}_count"
 
-    def create_record(
-        self,
-        rng_key: PRNGKey,
-        state: ProcessStateData,
-        orig_state: ProcessStateData,
-    ) -> PytreeDict:
-        transitions = (
-            self.states * state.nodes_pytree[self.key]
-            + orig_state.nodes_pytree[self.key]
-        )
-        counts = jnp.sum(jax.nn.one_hot(transitions, self.states * self.states), axis=0)
-        counts_from_to = jnp.reshape(counts, (self.states, self.states))
-        return {self.dest: counts_from_to}
+#     def create_record(
+#         self,
+#         rng_key: PRNGKey,
+#         state: ProcessStateData,
+#         orig_state: ProcessStateData,
+#     ) -> PytreeDict:
+#         counts = jnp.sum(
+#             jax.nn.one_hot(state.node_props[self.key], self.states), axis=0
+#         )
+#         return {self.dest: counts}
 
-    def get_traces(
-        self, state: ProcessState, diagonal=False, zeros=False, fraction=False
-    ):
-        """
-        Return a dict `{trace_name: y_array}` for plotting.
+#     def get_traces(self, state: ProcessState):
+#         """
+#         Return a dict `{trace_name: y_array}` for plotting.
 
-        Includes `"x": 0..s-1`.
-        Optionally contains diagonal traces (state to itself), transitions that never
-        happened, and/or contains fraction from source state rather than counts.
-        """
-        data = state.all_records()[self.dest]
-        if fraction:
-            data = data / state.n
-        d = {}
-        for s0, i0 in enumerate(self.state_names):
-            for s1, i1 in enumerate(self.state_names):
-                r = data[:, i0, i1]
-                if (diagonal or i0 != i1) and (zeros or jnp.sum(r) > 0):
-                    d[f"{s0} -> {s1}"] = r
-        d.update(x=jnp.arange(data.shape[0]))
-        return d
+#         Includes `"x": 0..s-1`.
+#         """
+#         data = state.all_records()[self.dest]
+#         d = {s: data[:, i] for s, i in enumerate(self.state_names)}
+#         d.update(x=jnp.arange(data.shape[0]))
+#         return d
+
+
+# class CountNodeTransitionsOp(OperationBase):
+#     def __init__(
+#         self, states: Union[int, List[str]], key: str = "state", dest: str = None
+#     ):
+#         if isinstance(states, int):
+#             self.state_names = [f"S{i}" for i in range(states)]
+#         else:
+#             self.state_names = states
+#         self.states = len(self.state_names)
+#         self.key = key
+#         self.dest = dest if dest is not None else f"{self.key}_transitions"
+
+#     def create_record(
+#         self,
+#         rng_key: PRNGKey,
+#         state: ProcessStateData,
+#         orig_state: ProcessStateData,
+#     ) -> PytreeDict:
+#         transitions = (
+#             self.states * state.node_props[self.key] + orig_state.node_props[self.key]
+#         )
+#         counts = jnp.sum(jax.nn.one_hot(transitions, self.states * self.states), axis=0)
+#         counts_from_to = jnp.reshape(counts, (self.states, self.states))
+#         return {self.dest: counts_from_to}
+
+#     def get_traces(
+#         self, state: ProcessState, diagonal=False, zeros=False, fraction=False
+#     ):
+#         """
+#         Return a dict `{trace_name: y_array}` for plotting.
+
+#         Includes `"x": 0..s-1`.
+#         Optionally contains diagonal traces (state to itself), transitions that never
+#         happened, and/or contains fraction from source state rather than counts.
+#         """
+#         data = state.all_records()[self.dest]
+#         if fraction:
+#             data = data / state.n
+#         d = {}
+#         for s0, i0 in enumerate(self.state_names):
+#             for s1, i1 in enumerate(self.state_names):
+#                 r = data[:, i0, i1]
+#                 if (diagonal or i0 != i1) and (zeros or jnp.sum(r) > 0):
+#                     d[f"{s0} -> {s1}"] = r
+#         d.update(x=jnp.arange(data.shape[0]))
+#         return d

@@ -34,7 +34,7 @@ def bench_sir(edge_beta, gamma):
             with utils.logged_time("  Creating graph"):
                 g = nx.random_graphs.barabasi_albert_graph(n, k)
             with utils.logged_time("  Creating state"):
-                state = np.new_state(g, params_pytree=params, seed=42)
+                state = np.new_state(g, params=params, seed=42)
             with utils.logged_time("  Warming up JIT"):
                 np.warmup_jit(state)
             with utils.logged_time("  One iteration"):

@@ -1,4 +1,4 @@
-import collections
+import dataclasses
 
 import jax
 import jax.numpy as jnp
@@ -9,7 +9,7 @@ from ..network import Network
 from ..utils import Pytree, PytreeDict, jax_utils
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ProcessStateData:
     """
     Auxiliary structure holding data for a state to be passed to JIT-able functions.
@@ -23,9 +23,12 @@ class ProcessStateData:
     n: jnp.int32
     m: jnp.int32
 
+    def _replace(self, **kw):
+        return dataclasses.replace(self, **kw)
+
     def copy(self):
         """Copy the state, reusing all the ndarrays and immutable objects."""
-        return dataclass.replace(
+        return dataclasses.replace(
             self,
             params=jax.tree_map(lambda x: x, self.params),
             node_props=jax.tree_map(lambda x: x, self.node_props),
@@ -54,29 +57,27 @@ class ProcessStateData:
     def _pad_to(self, n=None, m=None):
         """Return a copy of self padded or shortened to
         N and/or M (whichever is given)"""
-        n2, nt2 = self._pad_pytree_to(self.nodes_pytree, self.n, n)
-        m2, et2 = self._pad_pytree_to(self.edges_pytree, self.m, m)
+        n2, nt2 = self._pad_pytree_to(self.node_props, self.n, n)
+        m2, et2 = self._pad_pytree_to(self.edge_props, self.m, m)
         _, edges2 = self._pad_pytree_to(self.edges, self.m, m)
-        return self._replace(
-            edges=edges2, nodes_pytree=nt2, n=n2, edges_pytree=et2, m=m2
-        )
+        return self._replace(edges=edges2, node_props=nt2, n=n2, edge_props=et2, m=m2)
 
 
 class ProcessState:
     """
 
-    * `params_pytree` always contains "n" (# of nodes) and "m" (# of edges)
-    * `nodes_pytree` always contains "i" (node index)
-    * `edges_pytree` always contains "i" (edge index)
+    * `params` always contains "n" (# of nodes) and "m" (# of edges)
+    * `node_props` always contains "i" (node index)
+    * `edge_props` always contains "i" (edge index)
     """
 
     def __init__(
         self,
         rng_key: jax.random.PRNGKey,
         network: Network,
-        params_pytree={},
-        nodes_pytree={},
-        edges_pytree={},
+        params={},
+        node_props={},
+        edge_props={},
         record_chunks=(),
         process=None,
         updated_edges=None,
@@ -93,25 +94,25 @@ class ProcessState:
         self._network = network
         # Data - copied and converted to ndarrays in _ensure_ndarrays()
         self.edges = self._network.edges if updated_edges is None else updated_edges
-        self.params_pytree = params_pytree
-        self.nodes_pytree = nodes_pytree
-        self.edges_pytree = edges_pytree
+        self.params = params
+        self.node_props = node_props
+        self.edge_props = edge_props
         # Data sizes
         self.n = jnp.array(self._network.n, dtype=jnp.int32)
-        self.params_pytree.setdefault("n", self.n)
+        self.params.setdefault("n", self.n)
         self.m = jnp.array(self.edges.shape[0], dtype=jnp.int32)
-        self.params_pytree.setdefault("m", self.m)
+        self.params.setdefault("m", self.m)
         # Default step sounting
-        self.params_pytree.setdefault("step", jnp.array(0, dtype=jnp.int32))
+        self.params.setdefault("step", jnp.array(0, dtype=jnp.int32))
         # Ensure nodes and edges have numbers
-        if "i" not in self.edges_pytree:
-            self.edges_pytree["i"] = jnp.arange(self.m, dtype=jnp.int32)
-        if "i" not in self.nodes_pytree:
-            self.nodes_pytree["i"] = jnp.arange(self.n, dtype=jnp.int32)
-        if "out_deg" not in self.nodes_pytree:
-            self.nodes_pytree["out_deg"] = jnp.bincount(self.edges[:, 0], length=self.n)
-        if "in_deg" not in self.nodes_pytree:
-            self.nodes_pytree["in_deg"] = jnp.bincount(self.edges[:, 1], length=self.n)
+        if "i" not in self.edge_props:
+            self.edge_props["i"] = jnp.arange(self.m, dtype=jnp.int32)
+        if "i" not in self.node_props:
+            self.node_props["i"] = jnp.arange(self.n, dtype=jnp.int32)
+        if "out_deg" not in self.node_props:
+            self.node_props["out_deg"] = jnp.bincount(self.edges[:, 0], length=self.n)
+        if "in_deg" not in self.node_props:
+            self.node_props["in_deg"] = jnp.bincount(self.edges[:, 1], length=self.n)
 
         # Chunked stats records
         self._record_chunks = list(record_chunks)
@@ -127,14 +128,14 @@ class ProcessState:
         self.edges = jax_utils.ensure_array(self.edges, dtype=jnp.int32)
         self.m = jax_utils.ensure_array(self.m, dtype=jnp.int32)
         self.n = jax_utils.ensure_array(self.n, dtype=jnp.int32)
-        self.params_pytree = jax_utils.ensure_pytree(
-            self.params_pytree, concretize_types=concretize_types
+        self.params = jax_utils.ensure_pytree(
+            self.params, concretize_types=concretize_types
         )
-        self.nodes_pytree = jax_utils.ensure_pytree(
-            self.nodes_pytree, concretize_types=concretize_types
+        self.node_props = jax_utils.ensure_pytree(
+            self.node_props, concretize_types=concretize_types
         )
-        self.edges_pytree = jax_utils.ensure_pytree(
-            self.edges_pytree, concretize_types=concretize_types
+        self.edge_props = jax_utils.ensure_pytree(
+            self.edge_props, concretize_types=concretize_types
         )
 
     def copy_updated(self, new_state: ProcessStateData, new_records=()):
@@ -156,14 +157,12 @@ class ProcessState:
             rng_key=new_state.rng_key,
             network=self._network,
             updated_edges=new_state.edges,
-            params_pytree=_filter_check_merge(
-                self.params_pytree, new_state.params_pytree, "params_pytree"
+            params=_filter_check_merge(self.params, new_state.params, "params"),
+            node_props=_filter_check_merge(
+                self.node_props, new_state.node_props, "node_props"
             ),
-            nodes_pytree=_filter_check_merge(
-                self.nodes_pytree, new_state.nodes_pytree, "nodes_pytree"
-            ),
-            edges_pytree=_filter_check_merge(
-                self.edges_pytree, new_state.edges_pytree, "edges_pytree"
+            edge_props=_filter_check_merge(
+                self.edge_props, new_state.edge_props, "edge_props"
             ),
             record_chunks=list(self._record_chunks) + list(new_records),
             process=self._process,
@@ -171,12 +170,12 @@ class ProcessState:
 
     def _check_data(self):
         assert self.edges.shape == (self.m, 2)
-        for a in jax.tree_util.tree_leaves(self.params_pytree):
+        for a in jax.tree_util.tree_leaves(self.params):
             assert isinstance(a, jnp.DeviceArray)
-        for a in jax.tree_util.tree_leaves(self.nodes_pytree):
+        for a in jax.tree_util.tree_leaves(self.node_props):
             assert isinstance(a, jnp.DeviceArray)
             assert a.shape[0] == self.n
-        for a in jax.tree_util.tree_leaves(self.edges_pytree):
+        for a in jax.tree_util.tree_leaves(self.edge_props):
             assert isinstance(a, jnp.DeviceArray)
             assert a.shape[0] == self.m
 
@@ -222,9 +221,9 @@ class ProcessState:
         return ProcessStateData(
             rng_key=self.rng_key,
             edges=self.edges,
-            params_pytree=self.params_pytree,
-            nodes_pytree=self.nodes_pytree,
-            edges_pytree=self.edges_pytree,
+            params=self.params,
+            node_props=self.node_props,
+            edge_props=self.edge_props,
             n=self.n,
             m=self.m,
         )
@@ -233,12 +232,19 @@ class ProcessState:
         """
         Block until all arrays are actually computed (does not copy them to CPU).
         """
-        for pt in (self.params_pytree, self.edges_pytree, self.nodes_pytree):
+        for pt in (self.params, self.edge_props, self.node_props):
             for v in jax.tree_util.tree_leaves(pt):
                 v.block_until_ready()
         if len(self._record_chunks) > 0:
             for v in jax.tree_util.tree_leaves(self._record_chunks[-1]):
                 v.block_until_ready()
+
+
+jax.tree_util.register_pytree_node(
+    ProcessStateData,
+    lambda p: (dataclasses.astuple(p), None),
+    lambda _a, d: ProcessStateData(*d),
+)
 
 
 def _filter_check_merge(orig: PytreeDict, update: PytreeDict, name: str):

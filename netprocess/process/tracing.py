@@ -53,7 +53,7 @@ class Tracer:
         return state._replace(
             **{
                 k: self.TD(getattr(state, k), label + k[0].upper())
-                for k in ["nodes_pytree", "edges_pytree", "params_pytree"]
+                for k in ["node_props", "edge_props", "params"]
             }
         )
 

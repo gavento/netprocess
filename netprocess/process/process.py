@@ -5,6 +5,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from netprocess.operations.base import EdgeUpdateData, NodeUpdateData, ParamUpdateData
+
 from ..network import Network
 from ..utils import PRNGKey, PytreeDict
 from .state import ProcessState, ProcessStateData, _filter_check_merge
@@ -15,19 +17,20 @@ log = logging.getLogger(__name__)
 
 
 class NetworkProcess:
-    def __init__(self, operations):
+    def __init__(self, operations, record=()):
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
         self._run_jit = jax.jit(self._run, static_argnames=["tracing", "jit"])
         self._traced = 0
         self._tr = Tracer(tracing=False)
         self._tr.log_line("<Never traced>")
+        self.record = record
 
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.operations}>"
 
     def run(self, state: ProcessState, steps=1, jit=True) -> ProcessState:
-        step0 = state.params_pytree["step"]
+        step0 = state.params["step"]
         steps_array = jnp.arange(step0, step0 + steps, dtype=jnp.int32)
         state_data = state.as_pytree()
         if jit:
@@ -80,7 +83,7 @@ class NetworkProcess:
             for si in steps_array:
                 state, r = self._run_step(state, si)
                 rs.append(r)
-            return state, jax.tree_multimap(jnp.stack, *rs)
+            return state, jax.tree_multimap(lambda *r: jnp.stack(list(r)), *rs)
 
     def _run_step(self, state: ProcessStateData, step: jnp.int32):
         """Returns (new_state, record_pytree). JIT-able."""
@@ -91,30 +94,28 @@ class NetworkProcess:
         # Set step number
         state = state.copy()
         # NB: this shuld be a noop with correct external step numbering
-        state.params_pytree["step"] = step
+        state.params["step"] = step
 
         # Run all the update steps, updating the staself._run_step(s, si)te
         state = self._run_update_edges(state)
         state = self._run_update_nodes(state)
         state = self._run_update_params(state, orig_state)
-        # Note: this folds in values 1..(#ops) to the state rng
-        records = self._run_create_record(state, orig_state)
+
+        records = {rn: state.params[rn] for rn in self.record}
 
         # Finally, increment the step number
-        state.params_pytree["step"] = step + 1
+        state.params["step"] = step + 1
 
         # Create the new state, filtering underlines and checking
         # that we only update existing keys
         state = state._replace(
             rng_key=jax.random.fold_in(state.rng_key, 0),
-            params_pytree=_filter_check_merge(
-                orig_state.params_pytree, state.params_pytree, "params"
+            params=_filter_check_merge(orig_state.params, state.params, "params"),
+            node_props=_filter_check_merge(
+                orig_state.node_props, state.node_props, "node"
             ),
-            nodes_pytree=_filter_check_merge(
-                orig_state.nodes_pytree, state.nodes_pytree, "node"
-            ),
-            edges_pytree=_filter_check_merge(
-                orig_state.edges_pytree, state.edges_pytree, "edge"
+            edge_props=_filter_check_merge(
+                orig_state.edge_props, state.edge_props, "edge"
             ),
         )
         return state, records
@@ -131,11 +132,13 @@ class NetworkProcess:
             for i, op in enumerate(self.operations):
                 r = jax.random.fold_in(rng_key, i)
                 updates = op.update_edge(
-                    r,
-                    self._tr.TD(params, "P"),
-                    self._tr.TD(e_pt, "E"),
-                    self._tr.TD(from_pt, "fromN"),
-                    self._tr.TD(to_pt, "toN"),
+                    EdgeUpdateData(
+                        r,
+                        self._tr.TD(params, "P"),
+                        self._tr.TD(e_pt, "E"),
+                        self._tr.TD(from_pt, "fromN"),
+                        self._tr.TD(to_pt, "toN"),
+                    )
                 )
                 self._tr.log_operation_io(op, updates)
                 e_pt.update(updates)
@@ -143,22 +146,22 @@ class NetworkProcess:
 
         # Extract node values for edge endpoints
         n2e_from_pytree = jax.tree_util.tree_map(
-            lambda a: a[state.edges[:, 0]], state.nodes_pytree
+            lambda a: a[state.edges[:, 0]], state.node_props
         )
         n2e_to_pytree = jax.tree_util.tree_map(
-            lambda a: a[state.edges[:, 1]], state.nodes_pytree
+            lambda a: a[state.edges[:, 1]], state.node_props
         )
 
         self._tr.log_line("Edge updates:")
         new_edges_pytree = jax.vmap(edge_f, in_axes=(None, None, 0, 0, 0))(
             jax.random.fold_in(state.rng_key, 0),
-            state.params_pytree,
-            state.edges_pytree,
+            state.params,
+            state.edge_props,
             n2e_from_pytree,
             n2e_to_pytree,
         )
         return state._replace(
-            edges_pytree=new_edges_pytree, rng_key=jax.random.fold_in(state.rng_key, 1)
+            edge_props=new_edges_pytree, rng_key=jax.random.fold_in(state.rng_key, 1)
         )
 
     def _run_update_nodes(self, state: ProcessStateData) -> ProcessStateData:
@@ -166,18 +169,23 @@ class NetworkProcess:
         Apply all operation node updates on state.
         """
 
-        def node_f(shared_rng_key, params, n_pt, in_edges_agg, out_edges_agg):
+        def node_f(
+            shared_rng_key, params, n_pt, in_edges_agg, out_edges_agg, both_edges_agg
+        ):
             "Apply all operations on each node"
             n_pt = n_pt.copy()
             rng_key = jax.random.fold_in(shared_rng_key, n_pt["i"])
             for i, op in enumerate(self.operations):
                 r = jax.random.fold_in(rng_key, i)
                 updates = op.update_node(
-                    r,
-                    self._tr.TD(params, "P"),
-                    self._tr.TD(n_pt, "N"),
-                    self._tr.TD(in_edges_agg, "inE", depth=2),
-                    self._tr.TD(out_edges_agg, "outE", depth=2),
+                    NodeUpdateData(
+                        r,
+                        self._tr.TD(params, "P"),
+                        self._tr.TD(n_pt, "N"),
+                        self._tr.TD(in_edges_agg, "inE", depth=2),
+                        self._tr.TD(out_edges_agg, "outE", depth=2),
+                        self._tr.TD(both_edges_agg, "E", depth=2),
+                    )
                 )
                 self._tr.log_operation_io(op, updates)
                 n_pt.update(updates)
@@ -193,7 +201,7 @@ class NetworkProcess:
                 zval = np.iinfo(e_vals.dtype).max
             # Array of neutral values
             z = jnp.full(
-                state.nodes_pytree["i"].shape + e_vals.shape[1:],
+                state.node_props["i"].shape + e_vals.shape[1:],
                 zval,
                 dtype=e_vals.dtype,
             )
@@ -204,32 +212,36 @@ class NetworkProcess:
             return agg_op(z, e_endpoints_exp, e_vals, dims)
 
         # Compute edge-to-node value aggregates
-        in_edges_agg, out_edges_agg = {}, {}
-        for agg_op, agg_name, zval in (
-            (jax.lax.scatter_add, "sum", 0),
-            (jax.lax.scatter_mul, "prod", 1),
-            (jax.lax.scatter_min, "min", np.inf),
-            (jax.lax.scatter_max, "max", -np.inf),
+        in_edges_agg, out_edges_agg, both_edges_agg = {}, {}, {}
+        for agg_op, agg_name, zval, comb2 in (
+            (jax.lax.scatter_add, "sum", 0, lambda x1, x2: x1 + x2),
+            (jax.lax.scatter_mul, "prod", 1, lambda x1, x2: x1 * x2),
+            (jax.lax.scatter_min, "min", np.inf, jnp.minimum),
+            (jax.lax.scatter_max, "max", -np.inf, jnp.maximum),
         ):
             in_edges_agg[agg_name] = jax.tree_util.tree_map(
                 lambda a: scatter_op(agg_op, zval, a, state.edges[:, 1]),
-                state.edges_pytree,
+                state.edge_props,
             )
             out_edges_agg[agg_name] = jax.tree_util.tree_map(
                 lambda a: scatter_op(agg_op, zval, a, state.edges[:, 0]),
-                state.edges_pytree,
+                state.edge_props,
+            )
+            both_edges_agg[agg_name] = jax.tree_util.tree_multimap(
+                comb2, in_edges_agg[agg_name], out_edges_agg[agg_name]
             )
 
         self._tr.log_line("Node updates:")
-        new_nodes_pytree = jax.vmap(node_f, in_axes=(None, None, 0, 0, 0))(
+        new_nodes_pytree = jax.vmap(node_f, in_axes=(None, None, 0, 0, 0, 0))(
             jax.random.fold_in(state.rng_key, 0),
-            state.params_pytree,
-            state.nodes_pytree,
+            state.params,
+            state.node_props,
             in_edges_agg,
             out_edges_agg,
+            both_edges_agg,
         )
         return state._replace(
-            nodes_pytree=new_nodes_pytree,
+            node_props=new_nodes_pytree,
             rng_key=jax.random.fold_in(state.rng_key, 1),
         )
 
@@ -240,35 +252,21 @@ class NetworkProcess:
         Compute parameter updates.
         """
         self._tr.log_line("Param updates:")
-        new_params_pytree = state.params_pytree.copy()
+        new_params_pytree = state.params.copy()
         for i, op in enumerate(self.operations):
             updates = op.update_params(
-                jax.random.fold_in(state.rng_key, i + 1),
-                self._tr.TS(state),
-                self._tr.TS(orig_state, "orig"),
+                ParamUpdateData(
+                    jax.random.fold_in(state.rng_key, i + 1),
+                    self._tr.TS(state),
+                    self._tr.TS(orig_state, "orig"),
+                )
             )
             self._tr.log_operation_io(op, updates)
             new_params_pytree.update(updates)
         return state._replace(
-            params_pytree=new_params_pytree,
+            params=new_params_pytree,
             rng_key=jax.random.fold_in(state.rng_key, 0),
         )
-
-    def _run_create_record(
-        self, state: ProcessStateData, orig_state: ProcessStateData
-    ) -> PytreeDict:
-        "Create records from all operations for this step."
-        self._tr.log_line("Creating records:")
-        records = {}
-        for i, op in enumerate(self.operations):
-            updates = op.create_record(
-                jax.random.fold_in(state.rng_key, i + 1),
-                self._tr.TS(state),
-                self._tr.TS(orig_state, "orig"),
-            )
-            self._tr.log_operation_io(op, updates)
-            records.update(updates)
-        return records
 
     def new_state(
         self,
@@ -299,9 +297,9 @@ class NetworkProcess:
         state = ProcessState(
             rng_key,
             network=network,
-            params_pytree=dict(network.h5_as_pytree("/params"), **params),
-            nodes_pytree=dict(network.h5_as_pytree("/node_props"), **node_props),
-            edges_pytree=dict(network.h5_as_pytree("/edge_props"), **edge_props),
+            params=dict(network.h5_as_pytree("/params"), **params),
+            node_props=dict(network.h5_as_pytree("/node_props"), **node_props),
+            edge_props=dict(network.h5_as_pytree("/edge_props"), **edge_props),
             process=self,
         )
         # Prepare state for operations

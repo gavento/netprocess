@@ -41,17 +41,23 @@ class KeyOrValue:
             return self.value
         return pytree[self.key]
 
-    def ensure_in(self, pytree: PytreeDict):
+    def ensure_in(self, pytree: PytreeDict, repeat_times=None):
         if (
             self.key is not None
             and self.key not in pytree
             and not self.key.startswith("_")
         ):
             if self.default is not None:
-                pytree[self.key] = self.default
-            raise Exception(
-                f"Property {self.key:r} without a default missing in pytree"
-            )
+                if repeat_times is None:
+                    pytree[self.key] = self.default
+                else:
+                    pytree[self.key] = jnp.expand_dims(self.default, 0).repeat(
+                        repeat_times, 0
+                    )
+            else:
+                raise Exception(
+                    f"Property {self.key!r} without a default missing in pytree"
+                )
 
     def __str__(self):
         if self.key is None:

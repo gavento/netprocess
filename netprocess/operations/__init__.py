@@ -1,2 +1,5 @@
-from .base import OperationBase
-from .common import CountNodeStatesOp, CountNodeTransitionsOp, AdvanceTimeOp
+from .base import OperationBase, EdgeUpdateData, NodeUpdateData, ParamUpdateData
+from .common import (
+    Fun,
+    IncrementParam,
+)  # CountNodeStatesOp, CountNodeTransitionsOp, AdvanceTimeOp

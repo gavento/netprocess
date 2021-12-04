@@ -1,5 +1,5 @@
 from ..utils import PytreeDict, PRNGKey
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,9 @@ class EdgeUpdateData:
     edge: PytreeDict
     from_node: PytreeDict
     to_node: PytreeDict
+
+    def _replace(self, **kw):
+        return replace(self, **kw)
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,9 @@ class NodeUpdateData:
     out_edges: PytreeDict
     edges: PytreeDict
 
+    def _replace(self, **kw):
+        return replace(self, **kw)
+
 
 @dataclass(frozen=True)
 class ParamUpdateData:
@@ -45,8 +51,11 @@ class ParamUpdateData:
     """
 
     rng_key: PRNGKey
-    new_state: "netprocess.process.ProcessStateData"
+    state: "netprocess.process.ProcessStateData"
     prev_state: "netprocess.process.ProcessStateData"
+
+    def _replace(self, **kw):
+        return replace(self, **kw)
 
 
 class OperationBase:
@@ -55,7 +64,7 @@ class OperationBase:
         Prepare the (freshly created) state pytrees to be ready for this op.
 
         In particular, add all updated and required ndarrays to
-        state.params_pytree, state.nodes_pytree and state.edges_pytree,
+        state.params, state.node_props and state.edge_props,
         optionally check their shape and type if they exist.
         """
         pass

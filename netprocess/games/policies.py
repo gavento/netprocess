@@ -25,7 +25,7 @@ class SoftmaxPolicy(PlayerPolicyBase):
         self.beta = KeyOrValue(beta)
 
     def prepare_state_pytrees(self, state):
-        self.beta.ensure_in(state.params_pytree)
+        self.beta.ensure_in(state.params)
 
     def compute_policy(
         self,
@@ -50,7 +50,7 @@ class EpsilonErrorPolicy(PlayerPolicyBase):
         self.epsilon = KeyOrValue(epsilon)
 
     def prepare_state_pytrees(self, state):
-        self.epsilon.ensure_in(state.params_pytree)
+        self.epsilon.ensure_in(state.params)
 
     def compute_policy(
         self,

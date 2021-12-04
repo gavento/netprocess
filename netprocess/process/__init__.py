@@ -1,2 +1,2 @@
 from .process import NetworkProcess
-from .state import ProcessState
+from .state import ProcessState, ProcessStateData

@@ -3,27 +3,36 @@ import jax.numpy as jnp
 import networkx as nx
 import pytest
 from jax.numpy import array as a
-from netprocess import Network, NetworkProcess, games, operations
+from netprocess import Network, NetworkProcess, games
+from netprocess.operations import NodeUpdateData
 
 
 def test_policies():
     p = games.EpsilonErrorPolicy(epsilon="eps")
     assert p.compute_policy(
-        a([0.0, 1, 2, 1]), None, {"eps": 0.4}, {}, {}, {}
+        a([0.0, 1, 2, 1]), NodeUpdateData(state={"eps": 0.4})
     ) == pytest.approx(a([0.1, 0.1, 0.7, 0.1]))
     assert p.compute_policy(
-        a([0.0, 1, 2, 1, 0]), None, {"eps": 0.0}, {}, {}, {}
+        a([0.0, 1, 2, 1, 0]), NodeUpdateData(state={"eps": 0.0})
     ) == pytest.approx(a([0.0, 0.0, 1.0, 0.0, 0.0]))
 
     p = games.EpsilonErrorPolicy(epsilon=0.8)
-    assert p.compute_policy(
-        a([-10.0, -1, -2, -4]), None, {}, {}, {}, {}
-    ) == pytest.approx([0.2, 0.4, 0.2, 0.2])
+    assert (
+        p.compute_policy(
+            a([-10.0, -1, -2, -4]),
+            NodeUpdateData(state={}),
+        )
+        == pytest.approx([0.2, 0.4, 0.2, 0.2])
+    )
 
     p = games.SoftmaxPolicy(beta=0.0)
-    assert p.compute_policy(
-        a([0.0, -10, -1, -2, -4]), None, {}, {}, {}, {}
-    ) == pytest.approx(a([0.2, 0.2, 0.2, 0.2, 0.2]))
+    assert (
+        p.compute_policy(
+            a([0.0, -10, -1, -2, -4]),
+            NodeUpdateData(state={}),
+        )
+        == pytest.approx(a([0.2, 0.2, 0.2, 0.2, 0.2]))
+    )
 
 
 def test_payoffs():
@@ -50,11 +59,11 @@ def test_pure_strategy_game():
     p = games.SoftmaxPolicy(beta="beta")
     g = games.PureStrategyGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
     np = NetworkProcess([g])
-    s = np.new_state(net, seed=43, params={"beta": 1.0})
+    s = np.new_state(net, seed=43, props={"beta": 1.0})
     s = np.run(s, steps=10, jit=True)
-    assert sum(s.node_props["action"]) > 0.9 * N
-    s.params["beta"] = 0.05
+    assert sum(s.node["action"]) > 0.9 * N
+    s.data["beta"] = 0.05
     s = np.run(s, steps=10, jit=True)
-    print(s.node_props["action"])
-    assert sum(s.node_props["action"]) < 0.8 * N
-    assert sum(s.node_props["action"]) > 0.5 * N
+    print(s.node["action"])
+    assert sum(s.node["action"]) < 0.8 * N
+    assert sum(s.node["action"]) > 0.4 * N

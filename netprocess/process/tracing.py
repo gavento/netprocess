@@ -13,6 +13,7 @@ class TracingPropTreeWrapper(PropTree):
     Utility PropTree wrapper to track accessed keys.
     """
 
+    _FROZEN = True
     __slots__ = ("_pt", "_target", "_prefix")
 
     def __init__(
@@ -22,7 +23,7 @@ class TracingPropTreeWrapper(PropTree):
         _target: set = None,
         _prefix: str = "",
     ):
-        super().__init__()  ## The PropTree itself is empty, we hold reference to the wrapped object
+        super().__init__()  ## The PropTree itself is empty, we defer to the wrapped object
         self._pt = prop_tree
         self._target = _target
         self._prefix = _prefix
@@ -42,7 +43,16 @@ class TracingPropTreeWrapper(PropTree):
         return self[key]
 
     def copy(self):
-        raise NotImplemented("Forbidden for TracingPropTreeWrapper")
+        return TracingPropTreeWrapper(
+            self._pt.copy(), _target=self._target, _prefix=self._prefix
+        )
+
+    def _replace(self, updates: dict = {}, **kw_updates) -> PropTree:
+        return TracingPropTreeWrapper(
+            self._pt._replace(updates, **kw_updates),
+            _target=self._target,
+            _prefix=self._prefix,
+        )
 
     def tree_flatten(self):
         f, a = self._pt.tree_flatten()
@@ -53,6 +63,9 @@ class TracingPropTreeWrapper(PropTree):
         a, c, _target, _prefix = aux_data
         pt = c.tree_unflatten(a, children)
         return cls(pt, _target=_target, _prefix=_prefix)
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({self._pt}, _prefix={self._prefix!r})"
 
 
 class Tracer:

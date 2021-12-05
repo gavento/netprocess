@@ -1,14 +1,11 @@
-import copy
 from typing import Tuple
 
-import attr
 import jax
 import jax.numpy as jnp
-import numpy as np
 
-from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
+from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase
 from ..process import ProcessStateData
-from ..utils import KeyOrValue, KeyOrValueT, PRNGKey, PropTree
+from ..utils import KeyOrValue, KeyOrValueT, PropTree
 from .policies import PlayerPolicyBase
 
 

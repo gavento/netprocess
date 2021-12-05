@@ -1,13 +1,13 @@
 import copy
 from typing import Tuple
 
-import attr
 import jax
 import jax.numpy as jnp
+from netprocess.utils.types import PytreeDict
 
 from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase
-from ..utils import KeyOrValue, KeyOrValueT, PRNGKey, PytreeDict
 from ..process import ProcessStateData
+from ..utils import KeyOrValue, KeyOrValueT, PytreeDict
 from ..utils.jax_utils import cond
 
 

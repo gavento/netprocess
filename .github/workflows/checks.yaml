@@ -40,7 +40,7 @@ jobs:
           echo ::set-output name=version::$(python -c "import sys; print('-'.join(str(v) for v in sys.version_info))")
       - name: Install and set up Poetry
         run: |
-          python get-poetry.py --preview -y
+          python install-poetry.py -y
           source $HOME/.poetry/env
           poetry config virtualenvs.in-project true
       - name: Set up cache

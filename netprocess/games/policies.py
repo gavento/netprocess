@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from ..process import ProcessStateData
+from ..process import ProcessState
 from ..utils import KeyOrValue, KeyOrValueT
 from ..operations import NodeUpdateData
 
@@ -13,7 +13,7 @@ class PlayerPolicyBase:
     ) -> jnp.ndarray:
         raise NotImplemented
 
-    def prepare_state_data(self, state: ProcessStateData):
+    def prepare_state_data(self, state: ProcessState):
         pass
 
 
@@ -21,7 +21,7 @@ class SoftmaxPolicy(PlayerPolicyBase):
     def __init__(self, beta: KeyOrValueT):
         self.beta = KeyOrValue(beta)
 
-    def prepare_state_data(self, state: ProcessStateData):
+    def prepare_state_data(self, state: ProcessState):
         self.beta.ensure_in(state)
 
     def compute_policy(
@@ -42,7 +42,7 @@ class EpsilonErrorPolicy(PlayerPolicyBase):
     def __init__(self, epsilon: KeyOrValueT = 0.0):
         self.epsilon = KeyOrValue(epsilon)
 
-    def prepare_state_data(self, state: ProcessStateData):
+    def prepare_state_data(self, state: ProcessState):
         self.epsilon.ensure_in(state)
 
     def compute_policy(

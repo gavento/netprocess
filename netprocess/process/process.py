@@ -8,7 +8,7 @@ import numpy as np
 from ..network import Network
 from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
 from ..utils import PropTree
-from .state import ProcessState, ProcessStateData
+from .state import ProcessState, ProcessState
 from .tracing import Tracer
 
 log = logging.getLogger(__name__)
@@ -36,24 +36,22 @@ class NetworkProcess:
         return f"<{self.__class__.__name__} {self.operations}>"
 
     def run(self, state: ProcessState, steps=1, jit=True) -> ProcessState:
-        steps_array = jnp.arange(
-            state.data.step, state.data.step + steps, dtype=jnp.int32
-        )
+        steps_array = jnp.arange(state.step, state.step + steps, dtype=jnp.int32)
         if jit:
-            state_update, records = self._run_jit(
-                state.data, steps_array, tracing=True, jit=True
-            )
+            state, records = self._run_jit(state, steps_array, tracing=True, jit=True)
         else:
-            state_update, records = self._run(
-                state.data, steps_array, tracing=False, jit=False
-            )
-        return state._updated(state_update, [records])
+            state, records = self._run(state, steps_array, tracing=False, jit=False)
+        if len(records) > 0:
+            state._records.add_record(records)
+        return state
 
     def trace_log(self):
         return f"Traced {self._traced} times, last log:\n{self._tr.get_log()}"
 
     def warmup_jit(self, state=None, n=None, m=None, steps=1, block=True):
-        """Force the compilation of the JITted run function and wait for it (if `block`)."""
+        """
+        Force the compilation of the JITted run() function for given `n`, `m` and `steps`, and wait for it (if `block`).
+        """
         if state is None:
             assert n >= 2 and m >= 1
             state = self.new_state([[0, 1]] * m, n=n, seed=42)
@@ -67,7 +65,7 @@ class NetworkProcess:
 
     def _run(
         self,
-        state: ProcessStateData,
+        state: ProcessState,
         steps_array: jnp.DeviceArray,
         tracing: bool,
         jit: bool,
@@ -91,7 +89,7 @@ class NetworkProcess:
                 rs.append(r)
             return state, jax.tree_multimap(lambda *r: jnp.stack(list(r)), *rs)
 
-    def _run_step(self, data: ProcessStateData, step: jnp.int32):
+    def _run_step(self, data: ProcessState, step: jnp.int32):
         """Returns (new_state, record_pytree). JIT-able."""
 
         # Original state, never updated
@@ -121,7 +119,7 @@ class NetworkProcess:
         )
         return data, records
 
-    def _run_update_edges(self, state: ProcessStateData) -> ProcessStateData:
+    def _run_update_edges(self, state: ProcessState) -> ProcessState:
         """
         Apply all edge operations and return updated state (incl. prng_key).
         """
@@ -166,7 +164,7 @@ class NetworkProcess:
             edge=new_edge_data, prng_key=jax.random.fold_in(state.prng_key, 1)
         )
 
-    def _run_update_nodes(self, state: ProcessStateData) -> ProcessStateData:
+    def _run_update_nodes(self, state: ProcessState) -> ProcessState:
         """
         Apply all node operations and return updated state (incl. prng_key).
         """
@@ -252,8 +250,8 @@ class NetworkProcess:
         )
 
     def _run_update_params(
-        self, state: ProcessStateData, orig_state: ProcessStateData
-    ) -> ProcessStateData:
+        self, state: ProcessState, orig_state: ProcessState
+    ) -> ProcessState:
         """
         Apply all (global) state updates and return an updated state (incl. prng_key).
         """
@@ -279,6 +277,7 @@ class NetworkProcess:
         props: PropTree = {},
         *,
         seed=None,
+        record_stride=1,
     ):
         """
         Create a new ProcessState, also ensuring the required initial properties for all operations.
@@ -298,14 +297,11 @@ class NetworkProcess:
 
         # Note: all pytree elements are converted to jax arrays later in the state constructor
         # Note: all pytrees are properly copied later in the state constructor
-        sd = ProcessStateData.from_network(network, prng_key, **props)
+        sd = ProcessState.from_network(
+            network, prng_key, props=props, record_stride=record_stride
+        )
         # Prepare state for operations
         for op in self.operations:
             op.prepare_state_data(sd)
         sd._assert_shapes()
-
-        return ProcessState(
-            data=sd,
-            network=network,
-            process=self,
-        )
+        return sd

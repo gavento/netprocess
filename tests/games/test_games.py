@@ -62,7 +62,7 @@ def test_pure_strategy_game():
     s = np.new_state(net, seed=43, props={"beta": 1.0})
     s = np.run(s, steps=10, jit=True)
     assert sum(s.node["action"]) > 0.9 * N
-    s.data["beta"] = 0.05
+    s["beta"] = 0.05
     s = np.run(s, steps=10, jit=True)
     print(s.node["action"])
     assert sum(s.node["action"]) < 0.8 * N

@@ -59,6 +59,7 @@ class TracingPropTreeWrapper(PropTree):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
+        assert cls == TracingPropTreeWrapper
         a, c, _target, _prefix = aux_data
         pt = c.tree_unflatten(a, children)
         return cls(pt, _target=_target, _prefix=_prefix)

@@ -68,6 +68,15 @@ def test_prop_tree():
     p2 = jax.tree_util.tree_map(lambda x: x, p)
     assert list(p2.items()) == list(p.items())
 
+    assert p.data_eq(p2)
+    assert not PropTree(a=1, b=2).data_eq(PropTree(a=1))
+    assert not PropTree(a=1).data_eq(PropTree(a=1, b=2))
+    assert PropTree(a={"x": 1}).data_eq(PropTree(a={"x": 1}, b={"c": {}}))
+    assert PropTree(a={"x": True}).data_eq(PT1(a={"x": True}, z={}))
+    assert PropTree(a=1.13).data_eq(PropTree(a=1.13))
+    assert not PropTree(a=1.13).data_eq(PropTree(a=1.13001))
+    assert PropTree(a=1.13).data_eq(PropTree(a=1.13001), eps=0.001)
+
 
 def test_integrality():
     assert not utils.is_integer(1.0)

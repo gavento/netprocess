@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase
-from ..process import ProcessStateData
+from ..process import ProcessState
 from ..utils import KeyOrValue, KeyOrValueT, PropTree
 from .policies import PlayerPolicyBase
 
@@ -79,7 +79,7 @@ class PureStrategyGame(OperationBase):
                 player == 0, lambda _: p[a1, a2], lambda _: p[a2, a1], None
             )
 
-    def prepare_state_data(self, state: ProcessStateData):
+    def prepare_state_data(self, state: ProcessState):
         """
         Prepare the state for running the process.
 

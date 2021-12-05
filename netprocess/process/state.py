@@ -1,12 +1,39 @@
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 
 from ..network import Network
 from ..utils import PRNGKey, PropTree, jax_utils
+from .records import ProcessRecords
+
+
+class _wrapped_equal:
+    """
+    Aux wrapper that is equal to all wrapped objects of the same type.
+
+    Used while carrying auxiliary data through Pytree tree types.
+    """
+
+    def __init__(self, obj: Any):
+        self._inner = obj
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, _wrapped_equal):
+            return False
+        if type(self._inner) != type(other._inner):
+            return False
+        return True
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({x.__class__.__name__})"
+
+    def get(self):
+        return self._inner
 
 
 @jax.tree_util.register_pytree_node_class
-class ProcessStateData(PropTree):
+class ProcessState(PropTree):
     """
     Structure holding array data for a state to be passed to JIT-able functions. A subclass of PropTree.
 
@@ -20,8 +47,10 @@ class ProcessStateData(PropTree):
     * `edge` - arrays for each edge
       * `i`, `src`, `tgt`, `weight`, `active`, (possibly others)
 
-    State may have other top-level properties (e.g. parameters), as well as any nested `PropTree`s.
+    The state property tree may have other top-level properties (e.g. parameters), as well as any nested `PropTree`s.
     """
+
+    __slots__ = ("_network", "_records")
 
     n: jnp.int32
     m: jnp.int32
@@ -32,8 +61,8 @@ class ProcessStateData(PropTree):
 
     @classmethod
     def from_network(
-        cls, net: Network, prng_key: PRNGKey, **props
-    ) -> "ProcessStateData":
+        cls, net: Network, prng_key: PRNGKey, record_stride: int = 1, props: dict = {}
+    ) -> "ProcessState":
         s = cls(**props)
         s["n"] = net.n
         s["m"] = net.m
@@ -53,6 +82,8 @@ class ProcessStateData(PropTree):
         s["node.weight"] = jnp.ones(net.n, dtype=jnp.float32)
         s["node.active"] = jnp.ones(net.n, dtype=jnp.bool_)
 
+        s._records = ProcessRecords(stride=record_stride)
+        s._network = net
         s._assert_shapes()
         return s
 
@@ -62,12 +93,12 @@ class ProcessStateData(PropTree):
         for k, v in self.edge.items():
             assert v.shape[0] == self.m
 
-    def _filter_underscored(self) -> "ProcessStateData":
-        d2 = {}
-        for k in self.keys():
-            if not any(kp.startswith("_") for kp in k.split(".")):
-                d2[k] = self[k]
-        return self.__class__(d2)
+    def _filter_underscored(self) -> "ProcessState":
+        s2 = self.copy()
+        for k in tuple(self.keys()):
+            if any(kp.startswith("_") for kp in k.split(".")):
+                s2._delitem_f(k)
+        return s2
 
     def _pad_to(self, n: int = None, m: int = None):
         """
@@ -81,94 +112,24 @@ class ProcessStateData(PropTree):
             s = s._replace(m=m, node=jax_utils.pad_pytree_to(s.edge, self.m, m))
         return s
 
+    def tree_flatten(self):
+        assert isinstance(self, ProcessState)
+        f, a = super().tree_flatten()
+        return (f, (a, _wrapped_equal(self._network), _wrapped_equal(self._records)))
 
-class ProcessState:
-    """
-    A high-level process state wrapping `ProcessStateData`. Also holds collected records.
-    """
-
-    def __init__(
-        self,
-        data: ProcessStateData,
-        network: Network,
-        process: "NetworkProcess" = None,
-        record_chunks=(),
-    ):
-        """
-        Internal constructor, use NetworkProcess.new_state() or self.copy_updated to create.
-        """
-        self.data = data
-        self._network = network
-        self._process = process
-        self._record_chunks = list(record_chunks)
-
-    def __getattr__(self, key):
-        try:
-            return self.data[key]
-        except KeyError:
-            return super().__getattribute__(key)
-
-    def _updated(self, new_data: ProcessStateData, new_records=()):
-        """
-        Return a copy of self updated with given ProcessStateData and single step records.
-
-        Filters out underscored pytree entries of the update and checks
-        that the updated pytree elements (top-level ones) exist in old state.
-
-        `new_records` is an iterable of `record_pytree`s.
-        Note that state `m`, `n` and `edges` must stay the same.
-        """
-        assert isinstance(new_data, ProcessStateData)
-        assert isinstance(self.data, ProcessStateData)
-        assert self.n == new_data.n
-        assert self.m == new_data.m
-
-        return ProcessState(
-            data=new_data,
-            network=self._network,
-            process=self._process,
-            record_chunks=list(self._record_chunks) + list(new_records),
-        )
-
-    def __repr__(self):
-        return f"<{self.__class__.__name__} N={self.n} M={self.m} records={self.count_records()} process={self._process}>"
-
-    def count_records(self):
-        if len(self._record_chunks) == 0:
-            return 0
-        if len(self._record_chunks[0]) == 0:
-            return None  # No records - unable to determine
-        return int(
-            sum(jax.tree_util.tree_leaves(pt)[0].shape[0] for pt in self._record_chunks)
-        )
-
-    def last_record(self):
-        """
-        Return pytree of the last record (as 1x... array)
-        """
-        if len(self._record_chunks) == 0:
-            raise ValueError(f"No records in {self!r}")
-        return jax.tree_util.tree_map(lambda a: a[[-1]], self._record_chunks[-1])
-
-    def all_records(self):
-        """
-        Return the concatenated records pytree.
-
-        Concatenates the records if chunked, replaces the chunks with the single
-        resulting chunk.
-        """
-        if len(self._record_chunks) == 0:
-            raise ValueError(f"No records in {self!r}")
-        if len(self._record_chunks) > 1:
-            self._record_chunks = [jax_utils.concatenate_pytrees(self._record_chunks)]
-        return self._record_chunks[0]
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        a, _network, _records = aux_data
+        pt = super().tree_unflatten(a, children)
+        assert isinstance(pt, ProcessState)
+        pt._network = _network.get()
+        pt._records = _records.get().copy()
+        return pt
 
     def block_on_all(self):
         """
         Block until all arrays are actually computed (does not copy them to CPU).
         """
-        for v in jax.tree_util.tree_leaves(self.data):
+        self._records.block_on_all()
+        for v in jax.tree_util.tree_leaves(self):
             v.block_until_ready()
-        if len(self._record_chunks) > 0:
-            for v in jax.tree_util.tree_leaves(self._record_chunks[-1]):
-                v.block_until_ready()

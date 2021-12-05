@@ -1,4 +1,4 @@
-from ..process.state import ProcessStateData
+from ..process.state import ProcessState
 from ..utils import KeyOrValue, KeyOrValueT
 from .base import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
 
@@ -50,7 +50,7 @@ class IncrementParam(OperationBase):
         self.value = KeyOrValue(value_key, default=default, dtype=dtype)
         self.increment = KeyOrValue(increment, dtype=dtype)
 
-    def prepare_state_data(self, data: ProcessStateData):
+    def prepare_state_data(self, data: ProcessState):
         self.value.ensure_in(data)
         self.increment.ensure_in(data)
 

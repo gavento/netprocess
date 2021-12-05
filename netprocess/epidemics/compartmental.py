@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from netprocess.utils.types import PytreeDict
 
 from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase
-from ..process import ProcessStateData
+from ..process import ProcessState
 from ..utils import KeyOrValue, KeyOrValueT, PytreeDict
 from ..utils.jax_utils import cond
 
@@ -106,7 +106,7 @@ class PoissonCompartmentalUpdateOp(OperationBase):
         else:
             raise TypeError
 
-    def prepare_state_data(self, state: ProcessStateData):
+    def prepare_state_data(self, state: ProcessState):
         """
         Prepare the state for running the process.
 

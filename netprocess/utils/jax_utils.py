@@ -74,9 +74,7 @@ def concatenate_pytrees(
     By default checks that the treedefs actually match
     (otherwise only leaf count and order matters).
     """
-    arrays, treedefs = jax.tree_util.unzip2(
-        jax.tree_util.tree_flatten(pt) for pt in pytrees
-    )
+    arrays, treedefs = jax.util.unzip2(jax.tree_util.tree_flatten(pt) for pt in pytrees)
     if check_treedefs:
         for td in treedefs[1:]:
             if td != treedefs[0]:

@@ -1,29 +1,26 @@
-import dataclasses
-
 import jax
 import jax.numpy as jnp
-from numpy import float32
-from netprocess.utils.prop_tree import PropTree
-
-from netprocess.utils.types import PRNGKey
 
 from ..network import Network
-from ..utils import Pytree, PytreeDict, jax_utils, PRNGKey
-import typing
-from ..utils.prop_tree import PropTree
+from ..utils import PRNGKey, PropTree, jax_utils
 
 
 @jax.tree_util.register_pytree_node_class
 class ProcessStateData(PropTree):
     """
-    Structure holding array data for a state to be passed to JIT-able functions.
+    Structure holding array data for a state to be passed to JIT-able functions. A subclass of PropTree.
 
-    Properties:
-    * n, m, prng_key, step
-    * node
-      * i, in_deg, out_deg, deg
-    * edge
-      * src, dst
+    State is almost always meant as **immutable**.
+    Prefer to use e.g. `state._replace({"a.b": 42}, c=3.14, d={'e':2.7})`, or copy() it and modify only right after.
+
+    Attribute properties:
+    * `n`, `m`, `prng_key`, `step`
+    * `node` - arrays for each node
+      * Node properties: `i`, `in_deg`, `out_deg`, `deg`, `weight`, `active`, (possibly others)
+    * `edge` - arrays for each edge
+      * `i`, `src`, `tgt`, `weight`, `active`, (possibly others)
+
+    State may have other top-level properties (e.g. parameters), as well as any nested `PropTree`s.
     """
 
     n: jnp.int32
@@ -87,7 +84,7 @@ class ProcessStateData(PropTree):
 
 class ProcessState:
     """
-    A high-level process state wrapping `ProcessStateData`.
+    A high-level process state wrapping `ProcessStateData`. Also holds collected records.
     """
 
     def __init__(

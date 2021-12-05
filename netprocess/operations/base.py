@@ -1,5 +1,3 @@
-from dataclasses import dataclass, replace
-
 from netprocess.utils.prop_tree import PropTree
 
 from ..utils import PRNGKey

@@ -1,12 +1,11 @@
 import encodings
 import gzip
 import lzma
+import pickle
 from pathlib import Path
 from typing import Any
 
 import pyzstd
-import pickle
-
 
 COMPRESS_SUFFIXES = [".zstd", ".xz", ".gz"]
 

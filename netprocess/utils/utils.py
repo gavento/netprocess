@@ -1,6 +1,5 @@
 import contextlib
 import datetime
-import functools
 import inspect
 import logging
 import time

@@ -1,6 +1,6 @@
+from ..process.state import ProcessStateData
 from ..utils import KeyOrValue, KeyOrValueT
-from .base import OperationBase, ParamUpdateData, EdgeUpdateData, NodeUpdateData
-from ..process.state import ProcessState, ProcessStateData
+from .base import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
 
 
 class Fun(OperationBase):

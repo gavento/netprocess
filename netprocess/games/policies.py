@@ -1,8 +1,7 @@
 import jax.numpy as jnp
-import numpy as np
 
 from ..process import ProcessStateData
-from ..utils import KeyOrValue, KeyOrValueT, PRNGKey, PropTree
+from ..utils import KeyOrValue, KeyOrValueT
 from ..operations import NodeUpdateData
 
 

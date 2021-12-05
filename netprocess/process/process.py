@@ -1,24 +1,28 @@
-import collections.abc
 import logging
 import random
 
 import jax
-from jax._src.tree_util import tree_flatten
 import jax.numpy as jnp
 import numpy as np
 
-from netprocess.operations.base import EdgeUpdateData, NodeUpdateData, ParamUpdateData
-
 from ..network import Network
-from ..utils import PRNGKey, PropTree
+from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
+from ..utils import PropTree
 from .state import ProcessState, ProcessStateData
 from .tracing import Tracer
-from ..operations import OperationBase
 
 log = logging.getLogger(__name__)
 
 
 class NetworkProcess:
+    """
+    A network process is an immutable sequence of operations on `ProcessState`.
+
+    The state is created for a network via `state0 = process.new_state(net, ...)` and then
+    eveolved with e.g. `state1 = process.run(state0, steps=10)`.
+    State also accumulates any gathered recorded properties on every step.
+    """
+
     def __init__(self, operations, record_keys=()):
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
@@ -119,7 +123,7 @@ class NetworkProcess:
 
     def _run_update_edges(self, state: ProcessStateData) -> ProcessStateData:
         """
-        Compute edge operations and update the state (incl. the prng_key).
+        Apply all edge operations and return updated state (incl. prng_key).
         """
 
         def edge_f(shared_rng_key, state, e_pt, src_pt, tgt_pt):
@@ -164,7 +168,7 @@ class NetworkProcess:
 
     def _run_update_nodes(self, state: ProcessStateData) -> ProcessStateData:
         """
-        Apply all operation node updates on state.
+        Apply all node operations and return updated state (incl. prng_key).
         """
 
         def node_f(
@@ -251,7 +255,7 @@ class NetworkProcess:
         self, state: ProcessStateData, orig_state: ProcessStateData
     ) -> ProcessStateData:
         """
-        Compute parameter updates.
+        Apply all (global) state updates and return an updated state (incl. prng_key).
         """
         self._tr.log_line("Param updates:")
         state = state.copy()
@@ -277,10 +281,11 @@ class NetworkProcess:
         seed=None,
     ):
         """
-        Create a new ProcessState with initial pytree elements for all operations.
+        Create a new ProcessState, also ensuring the required initial properties for all operations.
 
+        State properties are taken from `props` or using defaults.
         `seed` may be jax PRNGKey, a 64 bit number (used as a seed) or None (randomize).
-        The given param/sprops are used as overrides over the Network pytrees (those are untouched).
+        The given param/sprops are used as overrides over the Network parameters (if any; those are unmodified).
         """
         if seed is None:
             seed = random.randint(0, 1 << 64 - 1)

@@ -53,7 +53,7 @@ def test_sir_model():
     assert sum(s.node["compartment"] == 0) in range(2, 5)
     assert sum(s.node["compartment"] == 1) in range(3, 7)
     assert sum(s.node["compartment"] == 2) in range(1, 6)
-    assert abs(s.data["t"] - 8.0) < 1e-3
+    assert abs(s["t"] - 8.0) < 1e-3
     assert np._traced == 1  ## Not essential, testing tracing-once property
 
 

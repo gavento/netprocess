@@ -54,6 +54,14 @@ class PropTree(MutableMapping):
             raise AttributeError(
                 f"Key {k!r} is not among allowed props for {pt.__class__}"
             )
+        if (
+            isinstance(val, (dict, PropTree))
+            and (t is not None)
+            and not issubclass(t, PropTree)
+        ):
+            raise TypeError(
+                f"Trying to create a dict-like node {k} but annotated type is {t}"
+            )
         pt._items[k] = pt._convert_val(val, dict_type=t)
 
     def __setitem__(self, key: typing.Union[str, tuple], val: Any):
@@ -94,6 +102,33 @@ class PropTree(MutableMapping):
     def __len__(self):
         return len(tuple(iter(self)))
 
+    def data_eq(self, other: "PropTree", eps: float = None) -> bool:
+        """
+        Check equality of PropTrees by leaf data only (can have diffrent types or other attributes)
+
+        Requires the same shapes and dtypes. Ignores any empty (leaf-less) subtrees.
+        Optionally checks with some tolerance for floats, using `eps` for both absolute and relative error.
+        """
+        assert isinstance(other, PropTree)
+        k1 = set(self.keys())
+        k2 = set(other.keys())
+        if k1 != k2:
+            return False
+        for k in k1:
+            d1 = self[k]
+            d2 = other[k]
+            if d1.dtype != d2.dtype or d1.shape != d2.shape:
+                return False
+            if jnp.issubdtype(d1.dtype, jnp.floating) and eps is not None:
+                d1m = d1 - eps - jnp.abs(d1) * eps
+                d1p = d1 + eps + jnp.abs(d1) * eps
+                if not ((d1m <= d2).all() and (d1p >= d2).all()):
+                    return False
+            else:
+                if not (d1 == d2).all():
+                    return False
+        return True
+
     @classmethod
     def _convert_val(cls, v: Any, dict_type=None) -> Any:
         if isinstance(v, PropTree):
@@ -107,11 +142,8 @@ class PropTree(MutableMapping):
             raise TypeError(f"Invalid type {type(v)} passed to {cls.__name__}: {v!r}")
 
     def copy(self) -> "PropTree":
-        """Return a deep copy of self, also works on frozen items"""
-        s = self.__class__()
-        for k, v in self.items():
-            s._setitem_f(k, v)
-        return s
+        f, a = self.tree_flatten()
+        return self.__class__.tree_unflatten(a, f)
 
     def _replace(self, updates: dict = {}, **kw_updates) -> "PropTree":
         """Return a deep copy with some replaced properties"""
@@ -212,4 +244,7 @@ class PropTree(MutableMapping):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls({k: v for k, v in zip(aux_data, children)})
+        s = cls()
+        for k, v in zip(aux_data, children):
+            s._items[k] = v
+        return s

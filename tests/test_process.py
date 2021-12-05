@@ -10,6 +10,7 @@ from netprocess.operations import (
     OperationBase,
     ParamUpdateData,
 )
+from netprocess.process import ProcessRecords, ProcessState
 from networkx.generators import directed
 
 
@@ -38,13 +39,25 @@ def _new_state(process):
     )
 
 
+def test_state_as_pytree():
+    s = ProcessState(x=(1, 2), node={}, edge={"weight": (1, 1, 1, 1)}, n=3, m=4)
+    s._network = {"foo": "bar"}
+    s._records = ProcessRecords()
+    s2 = jax.tree_util.tree_map(lambda x: x, s)
+    assert type(s) == type(s2)
+    assert s._network is s2._network
+    assert (s["x"] == s2["x"]).all()
+    assert (s.edge["weight"] == s2.edge["weight"]).all()
+
+
 def test_nop_process():
     np = NetworkProcess([OperationBase()])
 
     n0 = Network.from_graph(nx.complete_graph(4))
     sa0 = np.new_state(n0, seed=32, props={"beta": 1.5})
+
     sa1 = np.run(sa0, steps=4, jit=False)
-    assert sa1.data["beta"] == 1.5
+    assert sa1["beta"] == 1.5
 
     sb0 = _new_state(np)
     sb1 = np.run(sb0, steps=2, jit=False)
@@ -52,13 +65,9 @@ def test_nop_process():
     # Look at step separately, set to 0 to allow comparison
     assert sb1.step == 2
     assert not (sb0.prng_key == sb1.prng_key).all()
-    sb1.data["step"] = 0
-    sb1.data["prng_key"] = sb0.prng_key
-
-    xpt, ypt = sb0.data, sb1.data
-    assert jax.tree_structure(xpt) == jax.tree_structure(ypt)
-    for x, y in zip(jax.tree_leaves(xpt), jax.tree_leaves(ypt)):
-        assert (x == y).all()
+    sb1["step"] = 0
+    sb1["prng_key"] = sb0.prng_key
+    assert sb0.data_eq(sb1)
 
 
 def test_custom_process():
@@ -109,11 +118,11 @@ def test_custom_process():
     assert (sb1.node["y"] == jnp.array([100.1, 298.2, 100.3, 285.4])).all()
     assert (sb1.edge["stat"] == sb1.edge["stat"]).all()
     assert (sb1.edge["aa"] == jnp.array([1.1, 2.3, 3.3, 4.1, 5.2])).all()
-    assert (sb1.all_records()["_a_rec"] == jnp.array([5.5])).all()
+    assert (sb1._records.all_records()["_a_rec"] == jnp.array([5.5])).all()
     # Check underscored are ommited
     assert "_nope" not in sb1.node
     assert "_nope" not in sb1.edge
-    assert "_nope" not in sb1.data
+    assert "_nope" not in sb1
 
     # Also test the computed degrees
     assert (sb1.node["in_deg"] == jnp.array([1, 2, 1, 1])).all()

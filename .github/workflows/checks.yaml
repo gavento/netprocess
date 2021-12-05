@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.6, 3.7, 3.8]
+        python-version: [3.7, 3.8, 3.9]
 
     steps:
       - uses: actions/checkout@v2
@@ -38,21 +38,21 @@ jobs:
         id: full-python-version
         run: |
           echo ::set-output name=version::$(python -c "import sys; print('-'.join(str(v) for v in sys.version_info))")
-      - name: Install and set up Poetry
-        run: |
-          python install-poetry.py -y
-          source $HOME/.poetry/env
-          poetry config virtualenvs.in-project true
-      - name: Set up cache
-        uses: actions/cache@v1
+      - name: Install and setup poetry
+        uses: Gr1N/setup-poetry@v7
+      - name: Poetry version
+        run: poetry --version
+      - name: Cache poetry environments
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
+      - name: Set up dependencies cache
+        uses: actions/cache@v2
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ steps.full-python-version.outputs.version }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install dependencies
-        run: |
-          source $HOME/.poetry/env
-          poetry install
+        run: poetry install
       - name: Test
-        run: |
-          source $HOME/.poetry/env
-          poetry run pytest
+        run: poetry run pytest

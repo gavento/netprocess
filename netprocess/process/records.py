@@ -64,15 +64,21 @@ class ProcessRecords:
         return ls[0].shape[0]
 
     def add_record(self, records: Pytree):
+        # Skip records without leaves
+        if len(jax.tree_util.tree_leaves(records)) == 0:
+            return
         # number of new records
         l = self._chunk_len(records)
-        self.steps += l
+        if l == 0:
+            return
         # first new record to take
-        m = (self.stride - (self.steps % self.stride)) % self.stride
+        m = (self.stride - self.steps) % self.stride
         if m < l:
             strided = jax.tree_util.tree_map(lambda a: a[m :: self.stride], records)
+            print(strided)
             self.records += self._chunk_len(strided)
             self.chunks.append(strided)
+        self.steps += l
 
     def block_on_all(self):
         """

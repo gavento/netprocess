@@ -1,0 +1,19 @@
+site_name: NetProcess
+
+theme:
+  name: "material"
+
+plugins:
+- search
+- mkdocstrings:
+    watch:
+      - netprocess
+    default_handler: python
+    handlers:
+      python:
+        selection:
+          filters: ["!^_"]
+        rendering:
+          show_signature_annotations: true
+          show_if_no_docstring: false
+          show_root_heading: true

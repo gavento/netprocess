@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "netprocess"
-version = "0.4.0"
+version = "0.4.1"
 description = "Framework for processes on complex networks: epidemis, game theory, percolation, Ising models. Built on JAX for speed and differentiability."
 authors = ["Tomas Gavenciak <gavento@gmail.com>"]
 

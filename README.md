@@ -59,7 +59,7 @@ On each step:
 * First the edge update function `update_edge` of every operation is ran on every edge. For every edge, the function gets `EdgeUpdateData` with the properties of both endpoint nodes, of the edge, and global state properties (e.g. parameters). It only updates the properties of the edge, though.
 * Then the `update_node` function of every operation is ran on evey node. For every node, it gets `NodeUpdateData` with properties of the node, global state properties (e.g. parameters) and aggregated data from all incoming and outgoing edges. Aggregates are used as `data.in_edges["max.some_edge_property"]`, `max`, `min`, `sum` and `prod` are available. Only properties of each node are updated.
 * Then `update_params` is ran for all the operations, updating _any_ state properties. This can also read and update all edge and node data, but may be inefficient (and cumbersome to e.g. traverse edges).
-* Lastly, properties are
+* Lastly, selected properties are collected into state record (a snapshot of these properties at every step).
 
 For simple operations, consider using `operations.Fun` with lambda functions. For example `Fun(node_f = lambda data: {"_mean_in_index": data.in_edges["sum.i"] / data.node["in_deg"]} )` is an peration that computes the mean index of incoming edges of every node, storing it as a (temporary) property `state.node._mean_in_index` (of shape `[n]` and dtype `jnp.float32`).
 

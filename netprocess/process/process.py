@@ -36,13 +36,19 @@ class NetworkProcess:
         return f"<{self.__class__.__name__} {self.operations}>"
 
     def run(self, state: ProcessState, steps=1, jit=True) -> ProcessState:
+        state = state.copy()
+        net, rec = state._network, state._records
+        state._network, state._records = None, None
+
         steps_array = jnp.arange(state.step, state.step + steps, dtype=jnp.int32)
         if jit:
             state, records = self._run_jit(state, steps_array, tracing=True, jit=True)
         else:
             state, records = self._run(state, steps_array, tracing=False, jit=False)
+
+        state._network, state._records = net, rec
         if len(records) > 0:
-            state._records.add_record(records)
+            state.records.add_record(records)
         return state
 
     def trace_log(self):

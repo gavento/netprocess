@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import networkx as nx
 from netprocess import Network, NetworkProcess
+from netprocess import operations
 from netprocess.operations import (
     EdgeUpdateData,
     NodeUpdateData,
@@ -101,6 +102,20 @@ def test_records():
     assert pra.data_eq(PropTree(a=[0, 3, 6, 9, 12]))
 
 
+def test_branching_records():
+    np = NetworkProcess(
+        [operations.Fun(params_f=lambda data: {"_x": data.state.step})],
+        record_keys=["_x"],
+    )
+    n0 = Network.from_graph(nx.complete_graph(4))
+    s0 = np.new_state(n0, seed=32)
+    s1 = np.run(s0, steps=3, jit=False)
+    s2a = np.run(s1, steps=2, jit=False)
+    s2b = np.run(s1, steps=1, jit=False)
+    assert (s2a.records.all_records()["_x"] == jnp.array([0, 1, 2, 3, 4])).all()
+    assert (s2b.records.all_records()["_x"] == jnp.array([0, 1, 2, 3])).all()
+
+
 def test_custom_process():
     # Full message passing
     class TestOp(OperationBase):
@@ -149,7 +164,7 @@ def test_custom_process():
     assert (sb1.node["y"] == jnp.array([100.1, 298.2, 100.3, 285.4])).all()
     assert (sb1.edge["stat"] == sb1.edge["stat"]).all()
     assert (sb1.edge["aa"] == jnp.array([1.1, 2.3, 3.3, 4.1, 5.2])).all()
-    assert (sb1._records.all_records()["_a_rec"] == jnp.array([5.5])).all()
+    assert (sb1.records.all_records()["_a_rec"] == jnp.array([5.5])).all()
     # Check underscored are ommited
     assert "_nope" not in sb1.node
     assert "_nope" not in sb1.edge

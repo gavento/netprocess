@@ -8,30 +8,6 @@ from ..utils import PRNGKey, PropTree, jax_utils
 from .records import ProcessRecords
 
 
-class _wrapped_equal:
-    """
-    Aux wrapper that is equal to all wrapped objects of the same type.
-
-    Used while carrying auxiliary data through Pytree tree types.
-    """
-
-    def __init__(self, obj: Any):
-        self._inner = obj
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, _wrapped_equal):
-            return False
-        if type(self._inner) != type(other._inner):
-            return False
-        return True
-
-    def __str__(self):
-        return f"{self.__class__.__name__}({x.__class__.__name__})"
-
-    def get(self):
-        return self._inner
-
-
 @jax.tree_util.register_pytree_node_class
 class ProcessState(PropTree):
     """
@@ -87,6 +63,18 @@ class ProcessState(PropTree):
         s._assert_shapes()
         return s
 
+    @property
+    def network(self) -> Network:
+        if self._network is None:
+            raise Exception(f"self.network is not available in NetworkProcess.run()")
+        return self._network
+
+    @property
+    def records(self) -> ProcessRecords:
+        if self._records is None:
+            raise Exception(f"self.records is not available in NetworkProcess.run()")
+        return self._records
+
     def _assert_shapes(self):
         for k, v in self.node.items():
             assert v.shape[0] == self.n
@@ -115,15 +103,17 @@ class ProcessState(PropTree):
     def tree_flatten(self):
         assert isinstance(self, ProcessState)
         f, a = super().tree_flatten()
-        return (f, (a, _wrapped_equal(self._network), _wrapped_equal(self._records)))
+        return (f, (a, self._network, self._records))
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         a, _network, _records = aux_data
         pt = super().tree_unflatten(a, children)
         assert isinstance(pt, ProcessState)
-        pt._network = _network.get()
-        pt._records = _records.get().copy()
+        pt._network = _network
+        pt._records = _records
+        if pt._records is not None:
+            pt._records = pt._records.copy()
         return pt
 
     def block_on_all(self):

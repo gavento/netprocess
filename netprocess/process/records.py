@@ -75,7 +75,6 @@ class ProcessRecords:
         m = (self.stride - self.steps) % self.stride
         if m < l:
             strided = jax.tree_util.tree_map(lambda a: a[m :: self.stride], records)
-            print(strided)
             self.records += self._chunk_len(strided)
             self.chunks.append(strided)
         self.steps += l

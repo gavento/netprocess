@@ -16,12 +16,12 @@ class Fun(OperationBase):
         self.node_f = node_f
         self.params_f = params_f
 
-    def update_edges(self, data: EdgeUpdateData) -> dict:
+    def update_edge(self, data: EdgeUpdateData) -> dict:
         if self.edge_f is None:
             return {}
         return self.edge_f(data)
 
-    def update_nodes(self, data: NodeUpdateData) -> dict:
+    def update_node(self, data: NodeUpdateData) -> dict:
         if self.node_f is None:
             return {}
         return self.node_f(data)

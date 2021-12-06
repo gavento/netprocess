@@ -225,11 +225,12 @@ class NetworkProcess:
                 zval,
                 dtype=e_vals.dtype,
             )
+            e_endpoints = jnp.where(state.edge["active"], e_endpoints, state.n + 1)
             e_endpoints_exp = jnp.expand_dims(e_endpoints, 1)
             dims = jax.lax.ScatterDimensionNumbers(
                 tuple(range(1, len(e_vals.shape))), (0,), (0,)
             )
-            return agg_op(z, e_endpoints_exp, e_vals, dims)
+            return agg_op(z, e_endpoints_exp, e_vals, dims, mode="drop")
 
         # Compute edge-to-node value aggregates
         in_edges_agg, out_edges_agg, both_edges_agg = {}, {}, {}

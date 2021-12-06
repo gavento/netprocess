@@ -42,6 +42,35 @@ def _new_state(process):
     )
 
 
+def test_inactive():
+    net = Network.from_edges(
+        n=4,
+        edges=jnp.array([(0, 2), (2, 1), (2, 3), (0, 1), (1, 0)]),
+        directed=True,
+    )
+    np = NetworkProcess(
+        [
+            operations.Fun(
+                edge_f=lambda data: {"si": 1 + data.src_node["i"]},
+                node_f=lambda data: {"x": data.in_edges["sum.si"]},
+            )
+        ]
+    )
+    s0 = np.new_state(
+        net,
+        props={
+            "node.x": jnp.zeros(net.n, dtype=jnp.int32),
+            "edge.si": jnp.zeros(net.m, dtype=jnp.int32),
+        },
+    )
+    s1 = np.run(s0, steps=1, jit=False)
+    assert (s1.node["x"] == jnp.array([2, 4, 1, 3])).all()
+
+    s1.edge["active"] = jnp.array([True, False, True, True, False])
+    s2 = np.run(s1, steps=1, jit=False)
+    assert (s2.node["x"] == jnp.array([0, 1, 1, 3])).all()
+
+
 def test_state_as_pytree():
     s = ProcessState(x=(1, 2), node={}, edge={"weight": (1, 1, 1, 1)}, n=3, m=4)
     s._network = {"foo": "bar"}

@@ -25,6 +25,15 @@ class ProcessState(PropTree):
         * always contains: `i`, `src`, `tgt`, `weight`, `active`
 
     The state property tree may have other top-level properties (e.g. parameters), as well as any nested `PropTree`.
+
+    Note: *Inactive edges* do not pass values to nodes (e.g. are not present in aggregates
+        like `in_edges.max.foo`) but still compute their updates (so no compute savings).
+
+        *Inactive nodes* still pass value over any *active edges* and they still compute
+        their updates (so no compute savings). Therefore `active` on nodes is mostly just a marker;
+
+        Operations and aggregatins need to ignore inactive edges and nodes as appropritate.
+        Their values are also recorded.
     """
 
     __slots__ = ("_network", "_records")

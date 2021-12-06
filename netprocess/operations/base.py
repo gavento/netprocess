@@ -88,7 +88,10 @@ class OperationBase:
         in the same step, underscored items are not persistet to next step.
         Must always return the same key sets! Must be JITtable.
 
-        Must be JIT-able.
+        Note: Inactive edges do not pass values to nodes (e.g. are not present in aggregates
+            like `in_edges.max.foo`) but still compute their updates (so no compute savings).
+            Operations and aggregatins need to ignore their values when appropritate.
+            Their values are also recorded.
         """
         return {}
 
@@ -98,9 +101,12 @@ class OperationBase:
 
         Must always return the same key set! Must be JITtable.
         All items are seen by all the later update functions
-        in the same step, underscored items are not persistet to next step.
+        in the same step, underscored items are not persistet to next step. Must be JIT-able.
 
-        Must be JIT-able.
+        Note: Inactive nodes still pass value over their *active edges* and they still compute
+            their updates (so no compute savings). `active` on nodes is mostly just a marker;
+            operations and aggregatins need to ignore their values when appropritate.
+            Their values are also recorded.
         """
         return {}
 

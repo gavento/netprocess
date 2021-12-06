@@ -40,6 +40,8 @@ A state is considered immutable, after an updated state is obtained by `s2=proce
 
 The set of state properties need to stay the same through every step, including shapes and data type (a fundamental requirement of JAX and JIT compiler). However, on every step some temporary properties can be generated. Their names need to start with `_` and are discarded at the end of every step. (They can still be recorded and passed between operations in one step, though.)
 
+Note on `active`: Inactive edges do not pass along data (i.e. do not contribute to `data.in_edges["max.something"]` etc.) but still update their state. Node inactivity is mostly just a marker - the updates of inactive nodes are still computed. *Active edges also pass along values from inactive nodes.* Your operations, records, and aggregations need to ignore inactive edges/nodes as appropriate.
+
 ### Pytrees and `PropTree`
 
 JAX has a neat concept of a (Pytree)[https://jax.readthedocs.io/en/latest/pytrees.html]: any tree-like structure of dictionaries, lists and simiar containers eventually holding some JAX arrays. This has the advantage of being ble to pass several array around in JIT-ed functions in a convenient structure (rather than as extremely long lists of individual array parameters). Somewhat similar to [`tf.nest`](https://www.tensorflow.org/api_docs/python/tf/nest) if you happen to know it.

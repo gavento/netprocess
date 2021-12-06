@@ -78,6 +78,7 @@ def logged_time(name, level=logging.INFO, logger=None):
     """
     if logger is None:
         logger = get_caller_logger()
+    assert logger is not None
     t0 = time.time()
     yield
     t1 = time.time()

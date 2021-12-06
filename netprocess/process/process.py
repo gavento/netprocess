@@ -1,5 +1,6 @@
 import logging
 import random
+from typing import Iterable
 
 import jax
 import jax.numpy as jnp
@@ -23,7 +24,7 @@ class NetworkProcess:
     State also accumulates any gathered recorded properties on every step.
     """
 
-    def __init__(self, operations, record_keys=()):
+    def __init__(self, operations: Iterable[OperationBase], record_keys=()):
         self.operations = tuple(operations)
         assert all(isinstance(op, OperationBase) for op in self.operations)
         self._run_jit = jax.jit(self._run, static_argnames=["tracing", "jit"])
@@ -36,6 +37,12 @@ class NetworkProcess:
         return f"<{self.__class__.__name__} {self.operations}>"
 
     def run(self, state: ProcessState, steps=1, jit=True) -> ProcessState:
+        """
+        Run `steps` steps of the process on the given `state`, returning a new state.
+
+        By default, JIT-compiles the operations for GPU or CPU.
+        Recorded keys are automatically added to the new state `records`.
+        """
         state = state.copy()
         net, rec = state._network, state._records
         state._network, state._records = None, None
@@ -51,7 +58,10 @@ class NetworkProcess:
             state.records.add_record(records)
         return state
 
-    def trace_log(self):
+    def trace_log(self) -> str:
+        """
+        Return the tracing log as a string.
+        """
         return f"Traced {self._traced} times, last log:\n{self._tr.get_log()}"
 
     def warmup_jit(self, state=None, n=None, m=None, steps=1, block=True):
@@ -283,8 +293,8 @@ class NetworkProcess:
         props: PropTree = {},
         *,
         seed=None,
-        record_stride=1,
-    ):
+        record_stride: int = 1,
+    ) -> ProcessState:
         """
         Create a new ProcessState, also ensuring the required initial properties for all operations.
 

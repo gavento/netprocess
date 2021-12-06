@@ -17,13 +17,14 @@ class ProcessState(PropTree):
     Prefer to use e.g. `state._replace({"a.b": 42}, c=3.14, d={'e':2.7})`, or copy() it and modify only right after.
 
     Attribute properties:
-    * `n`, `m`, `prng_key`, `step`
-    * `node` - arrays for each node
-      * Node properties: `i`, `in_deg`, `out_deg`, `deg`, `weight`, `active`, (possibly others)
-    * `edge` - arrays for each edge
-      * `i`, `src`, `tgt`, `weight`, `active`, (possibly others)
 
-    The state property tree may have other top-level properties (e.g. parameters), as well as any nested `PropTree`s.
+    * always contains: `n`, `m`, `prng_key`, `step`
+    * `node` - arrays for each node
+        * always contains: `i`, `in_deg`, `out_deg`, `deg`, `weight`, `active`
+    * `edge` - arrays for each edge
+        * always contains: `i`, `src`, `tgt`, `weight`, `active`
+
+    The state property tree may have other top-level properties (e.g. parameters), as well as any nested `PropTree`.
     """
 
     __slots__ = ("_network", "_records")

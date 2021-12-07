@@ -2,7 +2,16 @@
 
 NetProcess is a framework for modelling general processes on networks. Initially, it was motivated by modelling epidemics and information spread in networks but is written with network science, game theory and statistical physics research in mind, and should be suitable for e.g. forward flux sampling.
 
-See e.g. the epidemic process [demo script](https://github.com/gavento/netprocess/blob/master/netprocess/scripts/epi_demo.py) for a quickstart.
+## Quickstart
+
+* [Get Poetry](https://python-poetry.org/docs/#installation) (a great python package&environment management tool).
+* Clone this repository, swithch into it.
+* `poetry install` - creates a virtual environment and installs everything into it.
+* `poetry run jupyter notebook` - runs a Jupyter server.
+* `poetry run netprocess epi-demo` - runs the [demo script](https://github.com/gavento/netprocess/blob/master/netprocess/scripts/epi_demo.py).
+* `poetry run pytest` - run tests.
+
+See e.g. the epidemic process [demo script](https://github.com/gavento/netprocess/blob/master/netprocess/scripts/epi_demo.py) for a quickstart on usage. See the [definition of PureStrategyGame](https://github.com/gavento/netprocess/blob/master/netprocess/games/games.py) for an example of mid-complexity operation definition.
 
 ## JAX
 

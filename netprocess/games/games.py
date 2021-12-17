@@ -55,6 +55,7 @@ class NormalFormGameBase(OperationBase):
         self.cummulative_regret = KeyOrValue(
             self.key("cummulative_regret"), default=0.0
         )
+        self._empirical_strategy = KeyOrValue(self.key("_empirical_strategy"))
 
     @property
     def n(self):
@@ -104,8 +105,8 @@ class NormalFormGameBase(OperationBase):
 
     def update_node(self, data: NodeUpdateData) -> PropTree:
         actions_payoff = (
-            data.in_edges["sum"][self.key("_src_node_action_payoffs")]
-            + data.out_edges["sum"][self.key("_tgt_node_action_payoffs")]
+            data.in_edges["sum"][self.key("_tgt_node_action_payoffs")]
+            + data.out_edges["sum"][self.key("_src_node_action_payoffs")]
         )
         if self.player_payout_is_mean:
             deg = jnp.maximum(data.node["deg"], 1)
@@ -117,6 +118,7 @@ class NormalFormGameBase(OperationBase):
             self._current_payoff.key: actions_payoff[next_action],
             self.action_counts.key: action_counts,
             self.action.key: next_action,
+            self._empirical_strategy.key: action_counts / jnp.sum(action_counts),
         }
 
 
@@ -172,13 +174,15 @@ class RegretMatchingGame(NormalFormGameBase):
     ):
         super().__init__(action_set, payouts=payouts, path=path)
         if mu is None:
-            mu = self.n * (jnp.max(payouts) - jnp.min(payouts))
+            mu = (self.n + 1) * (jnp.max(payouts) - jnp.min(payouts))
         self.mu = KeyOrValue(mu)
         # action_counterfactual_payoffs is indexed by (played_action, counterfactual_action)
         self.action_counterfactual_payoffs = KeyOrValue(
             self.key("action_counterfactual_payoffs"),
             default=jnp.zeros((self.n, self.n), dtype=jnp.float32),
         )
+        self._action_probabilities = KeyOrValue(self.key("_action_probabilities"))
+        self._current_regrets = KeyOrValue(self.key("_current_regrets"))
 
     def prepare_state_data(self, state: ProcessState):
         super().prepare_state_data(state)
@@ -190,7 +194,9 @@ class RegretMatchingGame(NormalFormGameBase):
         last_action = self.action.get_from(up)
         action_payoffs = self._action_payoffs.get_from(up)
         action_counterfactual_payoffs = (
-            self.action_counterfactual_payoffs.get_from(data.node) + action_payoffs
+            self.action_counterfactual_payoffs.get_from(data.node)
+            .at[last_action, :]
+            .add(action_payoffs)
         )
         current_regrets = jnp.maximum(
             0.0,
@@ -210,5 +216,7 @@ class RegretMatchingGame(NormalFormGameBase):
             **{
                 self.next_action.key: new_action,
                 self.action_counterfactual_payoffs.key: action_counterfactual_payoffs,
+                self._action_probabilities.key: probs,
+                self._current_regrets.key: current_regrets,
             },
         )

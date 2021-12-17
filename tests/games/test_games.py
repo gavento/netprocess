@@ -37,8 +37,8 @@ def test_policies():
 
 def test_payoffs():
     p = games.EpsilonErrorPolicy()
-    g1 = games.PureStrategyGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
-    g2 = games.PureStrategyGame(
+    g1 = games.games.NormalFormGameBase(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
+    g2 = games.games.NormalFormGameBase(
         ["C", "D"], jnp.array([[[4, 4], [0, 5]], [[5, 0], [1, 1]]]), p
     )
     assert g1.payouts.value.shape != g2.payouts.value.shape
@@ -51,15 +51,15 @@ def test_payoffs():
                 assert g1.get_payoff(a1, a2, pl) == g2.get_payoff(a1, a2, pl)
 
 
-def test_pure_strategy_game():
+def test_best_response_game():
     N = 30
     net_g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=42)
     net = Network.from_graph(net_g)
 
     p = games.SoftmaxPolicy(beta="beta")
-    g = games.PureStrategyGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
+    g = games.BestResponseGame(["C", "D"], jnp.array([[4, 0], [5, 1]]), p)
     np = NetworkProcess([g])
-    s = np.new_state(net, seed=43, props={"beta": 1.0})
+    s = np.new_state(net, seed=43, props={"beta": 1.0, "node.next_action": [0] * N})
     s = np.run(s, steps=10, jit=True)
     assert sum(s.node["action"]) > 0.9 * N
     s["beta"] = 0.05
@@ -67,3 +67,18 @@ def test_pure_strategy_game():
     print(s.node["action"])
     assert sum(s.node["action"]) < 0.8 * N
     assert sum(s.node["action"]) > 0.4 * N
+
+
+def test_best_response_game():
+    N = 30
+    net_g = nx.random_graphs.barabasi_albert_graph(N, 3, seed=43)
+    net = Network.from_graph(net_g)
+
+    g = games.RegretMatchingGame(["C", "D"], jnp.array([[4, 0], [5, 1]]))
+    np = NetworkProcess([g])
+    s = np.new_state(net, seed=47, props={"node.next_action": [0] * N})
+    s = np.run(s, steps=10, jit=True)
+    assert sum(s.node["action"]) > 0.9 * N
+    s = np.run(s, steps=10, jit=True)
+    print(s.node["action"])
+    assert sum(s.node["action"]) == N

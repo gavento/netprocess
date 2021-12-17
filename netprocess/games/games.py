@@ -56,6 +56,7 @@ class NormalFormGameBase(OperationBase):
             self.key("cummulative_regret"), default=0.0
         )
         self._empirical_strategy = KeyOrValue(self.key("_empirical_strategy"))
+        self._action_probabilities = KeyOrValue(self.key("_action_probabilities"))
 
     @property
     def n(self):
@@ -159,7 +160,13 @@ class BestResponseGame(NormalFormGameBase):
         action = jax.lax.cond(
             do_update, lambda _: new_action, lambda _: data.node[self.action.key], None
         )
-        return dict(**up, **{self.next_action.key: action})
+        return dict(
+            **up,
+            **{
+                self.next_action.key: action,
+                self._action_probabilities.key: action_probs,
+            },
+        )
 
 
 class RegretMatchingGame(NormalFormGameBase):

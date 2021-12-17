@@ -54,5 +54,5 @@ class EpsilonErrorPolicy(PlayerPolicyBase):
         z = jnp.zeros_like(action_utilities)
         z = z.at[jnp.argmax(action_utilities)].set(1.0 - epsilon)
         z = z + epsilon / action_utilities.shape[0]
-        assert jnp.abs(jnp.sum(z) - 1.0) < 1e-3
+        # assert jnp.abs(jnp.sum(z) - 1.0) < 1e-3
         return z

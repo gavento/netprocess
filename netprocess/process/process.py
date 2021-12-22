@@ -6,6 +6,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from netprocess.utils import jax_utils
+
 from ..network import Network
 from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
 from ..utils import PropTree
@@ -180,6 +182,36 @@ class NetworkProcess:
             edge=new_edge_data, prng_key=jax.random.fold_in(state.prng_key, 1)
         )
 
+    def _aggregate_edges(self, state: ProcessState) -> PropTree:
+        """Compute edge-to-node value aggregates"""
+        in_edges_agg = jax_utils.create_scatter_aggregates(
+            state.node["i"].shape[0],
+            state.edge,
+            state.edge["tgt"],
+            state.edge["active"],
+        )
+        out_edges_agg = jax_utils.create_scatter_aggregates(
+            state.node["i"].shape[0],
+            state.edge,
+            state.edge["src"],
+            state.edge["active"],
+        )
+        COMB_2 = {
+            "min": jnp.minimum,
+            "max": jnp.maximum,
+            "sum": lambda x, y: x + y,
+            "prod": lambda x, y: x * y,
+        }
+        both_edges_agg = {
+            agg_name: jax.tree_util.tree_multimap(
+                comb2, in_edges_agg[agg_name], out_edges_agg[agg_name]
+            )
+            for agg_name, comb2 in COMB_2.items()
+        }
+        return PropTree(
+            in_edges=in_edges_agg, out_edges=out_edges_agg, edges=both_edges_agg
+        )
+
     def _run_update_nodes(self, state: ProcessState) -> ProcessState:
         """
         Apply all node operations and return updated state (incl. prng_key).
@@ -209,57 +241,16 @@ class NetworkProcess:
                 n_pt.update(updates)
             return n_pt
 
-        def scatter_op(agg_op, zval, e_vals, e_endpoints):
-            "Compute given aggregate of e_vals grouped by e_endpoints"
-            # Get min/max operation-neutral value for integers and infinities
-            # NB: this is numpy - should be static vals in the computation graph
-            if np.issubdtype(e_vals.dtype, np.bool_):
-                e_vals = jnp.int32(e_vals)
-            if np.isneginf(zval) and np.issubdtype(e_vals.dtype, np.integer):
-                zval = np.iinfo(e_vals.dtype).min
-            elif np.isinf(zval) and np.issubdtype(e_vals.dtype, np.integer):
-                zval = np.iinfo(e_vals.dtype).max
-            # Array of neutral values
-            z = jnp.full(
-                state.node["i"].shape + e_vals.shape[1:],
-                zval,
-                dtype=e_vals.dtype,
-            )
-            e_endpoints = jnp.where(state.edge["active"], e_endpoints, state.n + 1)
-            e_endpoints_exp = jnp.expand_dims(e_endpoints, 1)
-            dims = jax.lax.ScatterDimensionNumbers(
-                tuple(range(1, len(e_vals.shape))), (0,), (0,)
-            )
-            return agg_op(z, e_endpoints_exp, e_vals, dims, mode="drop")
-
-        # Compute edge-to-node value aggregates
-        in_edges_agg, out_edges_agg, both_edges_agg = {}, {}, {}
-        for agg_op, agg_name, zval, comb2 in (
-            (jax.lax.scatter_add, "sum", 0, lambda x1, x2: x1 + x2),
-            (jax.lax.scatter_mul, "prod", 1, lambda x1, x2: x1 * x2),
-            (jax.lax.scatter_min, "min", np.inf, jnp.minimum),
-            (jax.lax.scatter_max, "max", -np.inf, jnp.maximum),
-        ):
-            in_edges_agg[agg_name] = jax.tree_util.tree_map(
-                lambda a: scatter_op(agg_op, zval, a, state.edge["tgt"]),
-                state.edge,
-            )
-            out_edges_agg[agg_name] = jax.tree_util.tree_map(
-                lambda a: scatter_op(agg_op, zval, a, state.edge["src"]),
-                state.edge,
-            )
-            both_edges_agg[agg_name] = jax.tree_util.tree_multimap(
-                comb2, in_edges_agg[agg_name], out_edges_agg[agg_name]
-            )
+        edge_aggs = self._aggregate_edges(state)
 
         self._tr.log_line("Node updates:")
         new_node_data = jax.vmap(node_f, in_axes=(None, None, 0, 0, 0, 0))(
             jax.random.fold_in(state.prng_key, 0),
             state,
             state.node,
-            in_edges_agg,
-            out_edges_agg,
-            both_edges_agg,
+            edge_aggs["in_edges"],
+            edge_aggs["out_edges"],
+            edge_aggs["edges"],
         )
         return state._replace(
             node=new_node_data,

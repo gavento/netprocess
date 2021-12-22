@@ -3,7 +3,13 @@ import jax.numpy as jnp
 import pytest
 import functools
 from netprocess.utils import jax_utils, utils
+from netprocess.utils import prop_tree
 from netprocess.utils.prop_tree import PropTree
+import numpy as np
+
+
+def a(*els, **kws):
+    return jnp.array(els, **kws)
 
 
 class PT1(PropTree):
@@ -120,3 +126,36 @@ def test_switch():
     assert s3(0, 3, 4, 5) == 12
     assert s3(1, 0, 1, 2) == 42
     assert s3(2, 0, 0, 0) == 43
+
+
+def test_apply_scatter_op():
+    T, F = True, False
+    r = jax_utils.apply_scatter_op(
+        jax.lax.scatter_add, 3, a(2, 1, -3, 3), a(2, 0, 0, 2), active=a(1, 1, 1, 0)
+    )
+    assert (r == a(-2, 0, 2)).all()
+    r = jax_utils.apply_scatter_op(
+        jax.lax.scatter_max, 3, a(F, T, F, T), a(2, 0, 0, 2), active=a(1, 1, 1, 0)
+    )
+    assert (r == a(T, F, F)).all()
+    r = jax_utils.apply_scatter_op(
+        jax.lax.scatter_add, 3, a(F, T, T, T), a(2, 0, 0, 2), active=a(1, 1, 1, 0)
+    )
+    assert (r == a(2, 0, 0)).all()
+    r = jax_utils.apply_scatter_op(jax.lax.scatter_mul, 2, a(2.0), a(1))
+    assert (r == a(1.0, 2.0)).all()
+    r = jax_utils.apply_scatter_op(jax.lax.scatter_min, 2, a(2.0, 3.0), a(1, 1))
+    assert (r == a(np.inf, 2.0)).all()
+    assert (r == a(jnp.inf, 2.0)).all()
+
+
+def test_create_scatter_aggregates():
+    T, F = True, False
+    pt = prop_tree.PropTree(
+        x=a(2, 1, -3, 3), y=a(F, T, T, T), z=a(2.0, 3.0, -np.inf, 1.0)
+    )
+    r = jax_utils.create_scatter_aggregates(3, pt, a(2, 0, 0, 2), active=a(1, 1, 1, 0))
+    assert (r["sum.x"] == a(-2, 0, 2)).all()
+    assert (r["sum.y"] == a(2, 0, 0)).all()
+    assert (r["max.y"] == a(T, F, F)).all()
+    assert (r["min.z"] == a(-np.inf, np.inf, 2.0)).all()

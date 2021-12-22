@@ -2,8 +2,10 @@ import typing
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from .types import Pytree
+from .prop_tree import PropTree
 
 
 def ensure_array(a, dtype=None, concretize_types=True) -> jnp.ndarray:
@@ -119,4 +121,65 @@ def switch(funs: typing.List, i: jnp.int32, *args) -> typing.Any:
         lambda _: f(*args),
         lambda _: switch(funs[:-1], i, *args),
         None,
+    )
+
+
+def _op_neutral(op, dtype):
+    if np.issubdtype(dtype, np.bool_):
+        return op in (jax.lax.scatter_mul, jax.lax.scatter_min)
+    isint = np.issubdtype(dtype, np.integer)
+    return dtype.type(
+        {
+            jax.lax.scatter_add: 0,
+            jax.lax.scatter_mul: 1,
+            jax.lax.scatter_min: np.iinfo(dtype).max if isint else np.inf,
+            jax.lax.scatter_max: np.iinfo(dtype).min if isint else -np.inf,
+        }[op]
+    )
+
+
+def apply_scatter_op(
+    scatter_agg_op,
+    n: int,
+    values: jnp.ndarray,
+    targets: jnp.ndarray,
+    active: jnp.ndarray = None,
+) -> jnp.ndarray:
+    """
+    Apply given scatter aggregate operation on `values` with their target indices `targets`
+
+    `scatter_agg_op` is one of `jax.lax.scatter_*`. `n` is the result size, target indices outside the range are dropped.
+    If `active` is given, only `active[i]==True` positions are taken into account.
+    """
+    if np.issubdtype(values.dtype, np.bool_) and scatter_agg_op in (
+        jax.lax.scatter_add,
+        jax.lax.scatter_mul,
+    ):
+        values = jnp.int32(values)
+    neutral_value = _op_neutral(scatter_agg_op, values.dtype)
+    # Array of neutral values
+    z = jnp.full((n,) + values.shape[1:], neutral_value, dtype=values.dtype)
+    if active is not None:
+        targets = jnp.where(active, targets, n + 1)
+    targets = jnp.expand_dims(targets, 1)
+    dims = jax.lax.ScatterDimensionNumbers(
+        tuple(range(1, len(values.shape))), (0,), (0,)
+    )
+    return scatter_agg_op(z, targets, values, dims, mode="drop")
+
+
+def create_scatter_aggregates(
+    n: int,
+    edge: PropTree,
+    targets: jnp.ndarray,
+    active: jnp.ndarray = None,
+) -> PropTree:
+    apply_op_to_tree = lambda op: jax.tree_util.tree_map(
+        lambda a: apply_scatter_op(op, n, a, targets, active), edge
+    )
+    return PropTree(
+        sum=apply_op_to_tree(jax.lax.scatter_add),
+        prod=apply_op_to_tree(jax.lax.scatter_mul),
+        min=apply_op_to_tree(jax.lax.scatter_min),
+        max=apply_op_to_tree(jax.lax.scatter_max),
     )

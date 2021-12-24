@@ -15,8 +15,7 @@ class PropTree(MutableMapping):
     A tree-of-dictionaries structure, all leaves being JAX arrays or scalars.
     """
 
-    __slots__ = ("_items",)
-    _FROZEN = False
+    __slots__ = ("_items", "_frozen")
     _OTHER_PROPS = True
     _ATYPES = (
         jnp.ndarray,
@@ -35,6 +34,7 @@ class PropTree(MutableMapping):
         self, items: typing.Union[dict, "PropTree"] = {}, **kw_items: dict
     ) -> None:
         self._items = {}
+        self._frozen = False
         if isinstance(items, PropTree):
             items = items._items
         for k, v in items.items():
@@ -47,7 +47,7 @@ class PropTree(MutableMapping):
         return pt._items[k]
 
     def _setitem_f(self, key: typing.Union[str, tuple], val: Any):
-        "Internal operation, also works on FROZEN instances"
+        "Internal operation, do not use directly - also works on frozen instances"
         k, pt = self._rec(key, creating=True)
         t = pt._type_for_child(k)
         if t is None and not pt._OTHER_PROPS:
@@ -65,7 +65,7 @@ class PropTree(MutableMapping):
         pt._items[k] = pt._convert_val(val, dict_type=t)
 
     def __setitem__(self, key: typing.Union[str, tuple], val: Any):
-        if self._FROZEN:
+        if self._frozen:
             raise Exception(
                 f"Trying to set item {key!r} in frozen {self.__class__.__name__}"
             )
@@ -80,12 +80,12 @@ class PropTree(MutableMapping):
         )
 
     def _delitem_f(self, key: typing.Union[str, tuple]):
-        "Internal operation, also works on FROZEN instances"
+        "Internal operation, do not use directly - also works on frozen instances"
         k, pt = self._rec(key)
         del pt._items[k]
 
     def __delitem__(self, key: typing.Union[str, tuple]):
-        if self._FROZEN:
+        if self._frozen:
             raise Exception(
                 f"Trying to delete item {key!r} in frozen {self.__class__.__name__}"
             )
@@ -104,8 +104,9 @@ class PropTree(MutableMapping):
 
     def data_eq(self, other: "PropTree", eps: float = None) -> bool:
         """
-        Check equality of PropTrees by leaf data only (can have diffrent types or other attributes)
+        Check equality of PropTrees by leaf data only.
 
+        Ignores PropTree types, whether frozen, and any other non-array attributes.
         Requires the same shapes and dtypes. Ignores any empty (leaf-less) subtrees.
         Optionally checks with some tolerance for floats, using `eps` for both absolute and relative error.
         """
@@ -141,9 +142,19 @@ class PropTree(MutableMapping):
             return v  ####TODO
             raise TypeError(f"Invalid type {type(v)} passed to {cls.__name__}: {v!r}")
 
-    def copy(self) -> "PropTree":
+    def copy(self, frozen=None) -> "PropTree":
         f, a = self.tree_flatten()
-        return self.__class__.tree_unflatten(a, f)
+        s = self.__class__.tree_unflatten(a, f)
+        if frozen is not None:
+
+            def rec(n):
+                n._frozen = frozen
+                for v in n._items.values():
+                    if isinstance(v, PropTree):
+                        rec(v)
+
+            rec(s)
+        return s
 
     def _replace(self, updates: dict = {}, **kw_updates) -> "PropTree":
         """Return a deep copy with some replaced properties"""
@@ -163,6 +174,8 @@ class PropTree(MutableMapping):
     ) -> typing.Tuple[str, "PropTree"]:
         if isinstance(key, str):
             key = key.split(".")
+        if creating and self._frozen:
+            raise Exception("")
         assert len(key) >= 1
         if len(key) == 1:
             return key[0], self
@@ -187,6 +200,13 @@ class PropTree(MutableMapping):
         return self._items[key[0]]._rec(key[1:], creating=creating)
 
     def setdefault(self, key: typing.Union[str, tuple], val: Any) -> Any:
+        if self._frozen:
+            try:
+                return self[key]
+            except KeyError:
+                raise Exception(
+                    f"Trying to set item {key!r} in frozen {self.__class__.__name__}"
+                )
         k, pt = self._rec(key, creating=True)
         if k not in pt:
             if not pt._OTHER_PROPS and pt._type_for_child(k) is None:
@@ -240,11 +260,13 @@ class PropTree(MutableMapping):
 
     def tree_flatten(self):
         ks = list(self._items.keys())
-        return tuple(self._items[k] for k in ks), ks
+        return tuple(self._items[k] for k in ks), (ks, self._frozen)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         s = cls()
-        for k, v in zip(aux_data, children):
+        ks, frozen = aux_data
+        for k, v in zip(ks, children):
             s._items[k] = v
+        s._frozen = frozen
         return s

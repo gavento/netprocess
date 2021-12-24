@@ -1,3 +1,4 @@
+from attr import frozen
 import jax
 import jax.numpy as jnp
 import pytest
@@ -82,6 +83,20 @@ def test_prop_tree():
     assert PropTree(a=1.13).data_eq(PropTree(a=1.13))
     assert not PropTree(a=1.13).data_eq(PropTree(a=1.13001))
     assert PropTree(a=1.13).data_eq(PropTree(a=1.13001), eps=0.001)
+
+    p3 = PropTree(a=1)
+    p3["b.c"] = [2, 3]
+    p3 = p3.copy(frozen=True)
+    p3b = p3["b"]
+    with pytest.raises(Exception):
+        p3["c"] = 9
+    with pytest.raises(Exception):
+        p3b["d"] = 3
+    assert (p3b["c"] == jnp.array([2, 3])).all()
+    p3 = p3.copy(frozen=False)
+    p3["c"] = 9
+    p3["b"]["e"] = 42
+    p3["b.f"] = 43
 
 
 def test_integrality():

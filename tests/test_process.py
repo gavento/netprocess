@@ -1,19 +1,9 @@
-import collections.abc
-
 import jax
 import jax.numpy as jnp
 import networkx as nx
-from netprocess import Network, NetworkProcess
-from netprocess import operations
-from netprocess.operations import (
-    EdgeUpdateData,
-    NodeUpdateData,
-    OperationBase,
-    ParamUpdateData,
-)
+from netprocess import Network, NetworkProcess, operations
+from netprocess.operations import OperationBase
 from netprocess.process import ProcessRecords, ProcessState
-from networkx.generators import directed
-
 from netprocess.utils.prop_tree import PropTree
 
 
@@ -83,7 +73,9 @@ def test_state_as_pytree():
 
 
 def test_nop_process():
-    np = NetworkProcess([OperationBase()])
+    np = NetworkProcess(
+        [OperationBase(), lambda state: None, lambda state, old_state: None]
+    )
 
     n0 = Network.from_graph(nx.complete_graph(4))
     sa0 = np.new_state(n0, seed=32, props={"beta": 1.5})

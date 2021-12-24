@@ -1,124 +1,31 @@
-from netprocess.utils.prop_tree import PropTree
+from ..process.state import ProcessState
+from ..utils.prop_tree import PropTree
 
 from ..utils import PRNGKey
 
 
-class EdgeUpdateData(PropTree):
-    """
-    Structure holding data for node update operations.
-
-    Has props:
-    * `state` - entire ProcessStateData, use `state.node` and `state.edge` with caution, as well as `state.prng_key`
-    * `prng_key` - edge-local PRNG key
-    * `edge` - props of the edge to be updated
-    * `src_node`, `tgt_node` - props of the endpoint nodes of the edge
-    """
-
-    _FROZEN = True
-    _OTHER_PROPS = False
-
-    state: PropTree
-    prng_key: PRNGKey
-    edge: PropTree
-    src_node: PropTree
-    tgt_node: PropTree
-
-
-class NodeUpdateData(PropTree):
-    """
-    Structure holding data for node update operations.
-
-    Has props:
-    * `state` - entire ProcessStateData, use `state.node` and `state.edge` with caution, as well as `state.prng_key`
-    * `prng_key` - node-local PRNG key
-    * `node` - props of the node to be updated
-    * `src_node`, `tgt_node` - props of the endpoint nodes of the edge
-    * `in_edges`, `out_edges` - nested aggregates of edge properties and the dicts returned by update_edge
-    * `edges` - aggregated over the union of `in_edges` and `out_edges`
-
-    Aggregates: Currently, "sum", "prod", "min", and "max" are passed. Note that for bool dtypes, "sum" and "prod" is of dtype `int32`.
-    Use e.g. as: `data.in_edges["max"]["some_property"]`
-    """
-
-    _FROZEN = True
-    _OTHER_PROPS = False
-
-    state: PropTree
-    prng_key: PRNGKey
-    node: PropTree
-    in_edges: PropTree
-    out_edges: PropTree
-    edges: PropTree
-
-
-class ParamUpdateData(PropTree):
-    """
-    Structure holding data for global parameter update operations.
-    """
-
-    _FROZEN = True
-    _OTHER_PROPS = False
-
-    state: PropTree
-    prev_state: PropTree
-    prng_key: PRNGKey
-
-
 class OperationBase:
-    """
-    Base class for an operation in the network process.
-    """
+    """Base class for an operation in the network process."""
 
-    def prepare_state_data(self, state: "netprocess.process.ProcessStateData"):
-        """
-        Prepare the (freshly created) `ProcessStateData` PropTree to be ready for this operation.
+    def init_state(self, state: ProcessState):
+        """Initialize any operation intial data in the state.
 
-        In particular, add all updated and required ndarrays to
-        state.params, state.node_props and state.edge_props,
-        optionally check their shape and type if they exist.
-        """
+        This is never JIT-ted. May also check for presence and
+        shapes of parameters required for the operation."""
         pass
 
-    def update_edge(self, data: EdgeUpdateData) -> PropTree:
+    def __call__(self, state: ProcessState, orig_state: ProcessState):
+        """Main entry point of the operation.
+
+        May take 1 or 2 parameters (i.e. `prev_state` is optional).
+        For modifying the edges and nodes in a vectorized way,
+        consider calling `state.apply_node_fn` or `state.apply_edge_fn`.
+
+        Args:
+            state: Current state to be modified.
+            orig_state: State at the start of the step (optional, frozen).
         """
-        Compute and return the edge updates and messages to from_node and to_node.
-
-        Returns a single pytree dict. Underscored items are temporary, non-nderscored
-        items are edge updates. All items are seen by all the later update functions
-        in the same step, underscored items are not persistet to next step.
-        Must always return the same key sets! Must be JITtable.
-
-        Note: Inactive edges do not pass values to nodes (e.g. are not present in aggregates
-            like `in_edges.max.foo`) but still compute their updates (so no compute savings).
-            Operations and aggregatins need to ignore their values when appropritate.
-            Their values are also recorded.
-        """
-        return {}
-
-    def update_node(self, data: NodeUpdateData) -> PropTree:
-        """
-        Compute and return the node update items.
-
-        Must always return the same key set! Must be JITtable.
-        All items are seen by all the later update functions
-        in the same step, underscored items are not persistet to next step. Must be JIT-able.
-
-        Note: Inactive nodes still pass value over their *active edges* and they still compute
-            their updates (so no compute savings). `active` on nodes is mostly just a marker;
-            operations and aggregatins need to ignore their values when appropritate.
-            Their values are also recorded.
-        """
-        return {}
-
-    def update_params(self, data: ParamUpdateData) -> PropTree:
-        """
-        Compute and return the param updates.
-
-        Return a pytree dictionary.
-        Must always return the same key sets. Must be JIT-able.
-        Both `data.new_state` and `data_prev_state` include temporary (underscored) properties.
-        """
-        return {}
+        pass
 
     def __repr__(self):
         return f"<{self.__class__.__name__}>"

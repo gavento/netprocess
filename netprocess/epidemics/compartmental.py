@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from netprocess.utils.types import PytreeDict
 
-from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase
+from ..operations import OperationBase
 from ..process import ProcessState
 from ..utils import KeyOrValue, KeyOrValueT, PytreeDict
 from ..utils.jax_utils import cond

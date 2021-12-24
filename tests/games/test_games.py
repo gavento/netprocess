@@ -4,7 +4,6 @@ import networkx as nx
 import pytest
 from jax.numpy import array as a
 from netprocess import Network, NetworkProcess, games
-from netprocess.operations import NodeUpdateData
 
 
 def test_policies():

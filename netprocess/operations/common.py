@@ -1,64 +1,6 @@
 from ..process.state import ProcessState
 from ..utils import KeyOrValue, KeyOrValueT
-from .base import EdgeUpdateData, NodeUpdateData, OperationBase, ParamUpdateData
-
-
-class Fun(OperationBase):
-    """
-    Wrapper for functionally-defined operations.
-
-    Each of `edge_f`, `node_f`, and `params_f` takes the respective `EdgeUpdateData` etc. and
-    returns a dict of updated attributes.
-    """
-
-    def __init__(self, edge_f=None, node_f=None, params_f=None):
-        self.edge_f = edge_f
-        self.node_f = node_f
-        self.params_f = params_f
-
-    def update_edge(self, data: EdgeUpdateData) -> dict:
-        if self.edge_f is None:
-            return {}
-        return self.edge_f(data)
-
-    def update_node(self, data: NodeUpdateData) -> dict:
-        if self.node_f is None:
-            return {}
-        return self.node_f(data)
-
-    def update_params(self, data: ParamUpdateData) -> dict:
-        if self.params_f is None:
-            return {}
-        return self.params_f(data)
-
-
-class IncrementParam(OperationBase):
-    """
-    Operation that increments one param by another param or value.
-
-    Useful e.g. for incrementing counters or time passed.
-    """
-
-    def __init__(
-        self,
-        value_key: str,
-        increment: KeyOrValueT = 1,
-        default=None,
-        dtype=None,
-    ):
-        assert isinstance(value_key, str)
-        self.value = KeyOrValue(value_key, default=default, dtype=dtype)
-        self.increment = KeyOrValue(increment, dtype=dtype)
-
-    def prepare_state_data(self, data: ProcessState):
-        self.value.ensure_in(data)
-        self.increment.ensure_in(data)
-
-    def update_params(self, data: ParamUpdateData) -> dict:
-        return {
-            self.value.key: self.value.get_from(data.prev_state)
-            + self.increment.get_from(data.prev_state)
-        }
+from .base import OperationBase
 
 
 # class CountNodeStatesOp(OperationBase):

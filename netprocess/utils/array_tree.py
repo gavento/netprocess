@@ -269,14 +269,14 @@ class ArrayTree(MutableMapping):
                 s.append(v.nice_str(indent, _i0 + indent))
             else:
                 vs = "[...]"
-                if v.shape == () or (len(v.shape) == 1 and v.shape[0] <= 3):
+                if v.shape == () or (len(v.shape) == 1 and v.shape[0] <= 5):
                     vs = str(v)
                 s.append(f"{' '*_i0}{k}: array({v.shape}, {v.dtype}) = {vs}")
         return "\n".join(s)
 
     def __str__(self):
         def format(v):
-            if v.shape == () or (len(v.shape) == 1 and v.shape[0] <= 4):
+            if v.shape == () or (len(v.shape) == 1 and v.shape[0] <= 3):
                 return str(v)
             return f"array({v.shape}, {v.dtype})"
 

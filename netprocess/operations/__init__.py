@@ -1,1 +1,1 @@
-from .base import OperationBase
+from .base import OperationBase, NodeFn, EdgeFn

@@ -1,3 +1,4 @@
+from typing import Callable
 from ..process.state import ProcessState
 from ..utils import ArrayTree
 
@@ -29,3 +30,23 @@ class OperationBase:
 
     def __repr__(self):
         return f"<{self.__class__.__name__}>"
+
+
+class NodeFn(OperationBase):
+    """Simple helper operation that only calls `state.apply_node_fn(node_fn)`."""
+
+    def __init__(self, node_fn: Callable):
+        self.node_fn = node_fn
+
+    def __call__(self, state: ProcessState):
+        state.apply_node_fn(self.node_fn)
+
+
+class EdgeFn(OperationBase):
+    """Simple helper operation that only calls `state.apply_edge_fn(edge_fn)`."""
+
+    def __init__(self, edge_fn: Callable):
+        self.edge_fn = edge_fn
+
+    def __call__(self, state: ProcessState):
+        state.apply_edge_fn(self.edge_fn)

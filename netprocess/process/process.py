@@ -5,6 +5,7 @@ from typing import Callable, Iterable, Tuple, Union
 
 import jax
 import jax.numpy as jnp
+import netprocess
 import numpy as np
 
 from ..network import Network
@@ -43,7 +44,8 @@ class NetworkProcess:
         By default, JIT-compiles the operations for GPU or CPU.
         Recorded keys are automatically added to the new state `records`.
         """
-        assert len(state._record_set) == 0
+        state = state.copy()
+        assert state._record_set is None or len(state._record_set) == 0
         steps_array = jnp.arange(state.step, state.step + steps, dtype=jnp.int32)
         if jit:
             state2, records = self._run_jit(
@@ -114,14 +116,15 @@ class NetworkProcess:
         for op in self.operations:
             params = len(inspect.signature(op).parameters)
             if params == 1:
-                op(state)
+                res = op(state)
             elif params == 2:
-                op(state, prev_state)
+                res = op(state, prev_state)
             else:
                 raise TypeError(f"Operation must be callable with 1 or 2 arguments")
+            assert res is None
         # Record named parameters
         for rk in self.record_keys:
-            state.record(rk)
+            state.record_value(rk)
         # Collect record set into PropTree
         records = state._take_record_set()
         state._record_set = None

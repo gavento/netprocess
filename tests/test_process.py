@@ -40,9 +40,9 @@ def test_active_flag():
     )
 
     def op(state: ProcessState):
-        state.apply_edge_fn(lambda state, edge, src, tgt: {"si": 1})
-        # state.apply_edge_fn(lambda state, edge, src, tgt: {"si": 1 + src["i"]})
-        # state.apply_node_fn(lambda state, node, edges: {"x": edges["in.sum.si"]})
+        # state.apply_edge_fn(lambda state, edge, src, tgt: {"si": 1})
+        state.apply_edge_fn(lambda state, edge, src, tgt: {"si": 1 + src["i"]})
+        state.apply_node_fn(lambda state, node, edges: {"x": edges["in.sum.si"]})
 
     np = NetworkProcess([op])
     s0 = np.new_state(
@@ -53,6 +53,7 @@ def test_active_flag():
         },
     )
     s1 = np.run(s0, steps=1, jit=False)
+    print(s1.nice_str())
     assert (s1.node["x"] == jnp.array([2, 4, 1, 3])).all()
 
     s1.edge["active"] = jnp.array([True, False, True, True, False])
@@ -64,6 +65,7 @@ def test_state_as_pytree():
     s = ProcessState(x=(1, 2), node={}, edge={"weight": (1, 1, 1, 1)}, n=3, m=4)
     s._network = {"foo": "bar"}
     s._records = ProcessRecords()
+    s._record_set = {}
     s2 = jax.tree_util.tree_map(lambda x: x, s)
     assert type(s) == type(s2)
     assert s._network is s2._network
@@ -123,65 +125,61 @@ def test_records():
 
 
 def test_branching_records():
-    np = NetworkProcess(
-        [operations.Fun(params_f=lambda data: {"_x": data.state.step})],
-        record_keys=["_x"],
-    )
+    def f(state: ProcessState):
+        state.record_value("x", state.step)
+
+    np = NetworkProcess([f])
     n0 = Network.from_graph(nx.complete_graph(4))
     s0 = np.new_state(n0, seed=32)
     s1 = np.run(s0, steps=3, jit=False)
     s2a = np.run(s1, steps=2, jit=False)
     s2b = np.run(s1, steps=1, jit=False)
-    assert (s2a.records.all_records()["_x"] == jnp.array([0, 1, 2, 3, 4])).all()
-    assert (s2b.records.all_records()["_x"] == jnp.array([0, 1, 2, 3])).all()
+    assert (s2a.records.all_records()["x"] == jnp.array([0, 1, 2, 3, 4])).all()
+    assert (s2b.records.all_records()["x"] == jnp.array([0, 1, 2, 3])).all()
 
 
 def test_custom_process():
-    # Full message passing
-    class TestOp(OperationBase):
-        def update_edge(self, data: EdgeUpdateData):
-            return {
-                "aa": data.edge["aa"] + data.src_node["y"],
+    # A non-sensical edge and node operations
+    def op(state):
+        state.apply_edge_fn(
+            lambda state, edge, src, tgt: {
+                "aa": edge["aa"] + src["y"],
                 "_nope": 1,
-                "_tgt_x": data.tgt_node["x"],
-                "_src_x": data.src_node["x"],
+                "_tgt_x": tgt["x"],
+                "_src_x": src["x"],
                 "_deg": 1,
             }
-
-        def update_node(self, data: NodeUpdateData):
-            return {
-                "x": data.in_edges["sum"]["_src_x"],
-                "y": data.node["y"]
+        )
+        state.apply_node_fn(
+            lambda state, node, edges: {
+                "x": edges["in.sum._src_x"],
+                "y": node["y"]
                 + jax.lax.cond(
-                    data.out_edges["sum"]["_deg"] >= 2,
+                    edges["out.sum._deg"] >= 2,
                     lambda _: 100.0,
                     lambda _: jnp.float32(
-                        jax.random.randint(data.prng_key, (), 200, 300)
+                        jax.random.randint(state.prng_key, (), 200, 300)
                     ),
                     None,
                 ),
-                "indeg": data.in_edges["sum"]["_deg"],
-                "outdeg": data.out_edges["sum"]["_deg"],
+                "indeg": edges["in.sum._deg"],
+                "outdeg": edges["out.sum._deg"],
                 "_nope": 0,
             }
+        )
+        a = jnp.sum(state.node["indeg"])
+        state["_a"] = (a,)
+        state["_a_rec"] = (a * state.edge["aa"][0],)
 
-        def update_params(self, data: ParamUpdateData):
-            a = jnp.sum(data.state.node["indeg"])
-            return {
-                "_a": a,
-                "_a_rec": a * data.state.edge["aa"][0],
-            }
-
-    np = NetworkProcess([TestOp()], record_keys=["_a_rec"])
+    np = NetworkProcess([op], record_keys=["_a_rec"])
     sb0 = _new_state(np)
     sb1 = np.run(sb0, steps=1)
-    print(np.trace_log())
 
     assert (sb1.node["indeg"] == jnp.array([1, 2, 1, 1])).all()
     assert (sb1.node["outdeg"] == jnp.array([2, 1, 2, 0])).all()
     assert (sb1.node["x"] == jnp.array([[3, 4], [6, 8], [1, 2], [5, 6]])).all()
     # NB: this one depends on the RNG for reproducibility
-    assert (sb1.node["y"] == jnp.array([100.1, 298.2, 100.3, 285.4])).all()
+    assert (sb1.node["y"] == jnp.array([100.1, 218.2, 100.3, 201.4])).all()
     assert (sb1.edge["stat"] == sb1.edge["stat"]).all()
     assert (sb1.edge["aa"] == jnp.array([1.1, 2.3, 3.3, 4.1, 5.2])).all()
     assert (sb1.records.all_records()["_a_rec"] == jnp.array([5.5])).all()

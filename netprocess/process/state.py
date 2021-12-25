@@ -15,10 +15,10 @@ StateFn = Callable[["ProcessState"], ArrayTree]
 @jax.tree_util.register_pytree_node_class
 class ProcessState(ArrayTree):
     """
-    Structure holding array data for a state to be passed to JIT-able functions. A subclass of PropTree.
+    Structure holding array data for a state to be passed to JIT-able functions.
 
-    State is almost always meant as **immutable**.
-    Prefer to use e.g. `state._replace({"a.b": 42}, c=3.14, d={'e':2.7})`, or copy() it and modify only right after.
+    A subclass of ArrayTree, additionally holding data on the original network
+    and the collected records (those are not accessible in JIT-ted code).
 
     Attribute properties:
 
@@ -28,26 +28,52 @@ class ProcessState(ArrayTree):
     * `edge` - arrays for each edge
         * always contains: `i`, `src`, `tgt`, `weight`, `active`
 
-    The state property tree may have other top-level properties (e.g. parameters), as well as any nested `PropTree`.
-
     Note: *Inactive edges* do not pass values to nodes (e.g. are not present in aggregates
         like `in_edges.max.foo`) but still compute their updates (so no compute savings).
 
         *Inactive nodes* still pass value over any *active edges* and they still compute
-        their updates (so no compute savings). Therefore `active` on nodes is mostly just a marker;
-
+        their updates (so no compute savings). Therefore `active` on nodes is mostly just a marker.
         Operations and aggregatins need to ignore inactive edges and nodes as appropritate.
         Their values are also recorded.
     """
 
     __slots__ = ("_network", "_records", "_record_set")
 
-    n: jnp.int32
-    m: jnp.int32
-    step: jnp.int32
-    prng_key: PRNGKey
-    edge: ArrayTree
-    node: ArrayTree
+    @property
+    def n(self) -> jnp.ndarray:
+        return self["n"]
+
+    @property
+    def m(self) -> jnp.ndarray:
+        return self["m"]
+
+    @property
+    def step(self) -> jnp.ndarray:
+        return self["step"]
+
+    @property
+    def prng_key(self) -> PRNGKey:
+        return self["prng_key"]
+
+    @property
+    def edge(self) -> ArrayTree:
+        return self["edge"]
+
+    @property
+    def node(self) -> ArrayTree:
+        return self["node"]
+
+    @property
+    def network(self) -> Network:
+        if self._network is None:
+            raise Exception(f"self.network is not available")
+        return self._network
+
+    @property
+    def records(self) -> ProcessRecords:
+        if self._records is None:
+            raise Exception(f"self.records is not available")
+        return self._records
 
     @classmethod
     def from_network(
@@ -78,20 +104,8 @@ class ProcessState(ArrayTree):
         s._assert_shapes()
         return s
 
-    @property
-    def network(self) -> Network:
-        if self._network is None:
-            raise Exception(f"self.network is not available")
-        return self._network
-
-    @property
-    def records(self) -> ProcessRecords:
-        if self._records is None:
-            raise Exception(f"self.records is not available")
-        return self._records
-
-    def get_prng(self) -> PRNGKey:
-        """Return a new PRNG key, advancing `state.prng_key`."""
+    def next_prng_key(self) -> PRNGKey:
+        """Return a new PRNG key, also advancing `state.prng_key`."""
         self["prng_key"], prng2 = jax.random.split(self.prng_key)
         return prng2
 
@@ -106,15 +120,15 @@ class ProcessState(ArrayTree):
             edge_fn (EdgeFn): function applied to every edge. Must be JIT-able.
         """
         edges = self._aggregate_edges().copy(frozen=True)
-        self.edge.update(
+        self.node.update(
             jax.vmap(
-                lambda state, pk, node, edges: node_fn(
-                    ArrayTree(state._replace(prng_key=pk), node, edges)
+                lambda state, pk, node, edges: ArrayTree(
+                    node_fn(state.copy(replacing={"prng_key": pk}), node, edges)
                 ),
-                in_axes=(None, 0, 0, 0, 0),
+                in_axes=(None, 0, 0, 0),
             )(
                 self._bare_copy(frozen=True),
-                jax.random.split(self.get_prng(), self["node.i"].shape[0]),
+                jax.random.split(self.next_prng_key(), self["node.i"].shape[0]),
                 self.node.copy(frozen=True),
                 edges,
             ).copy(
@@ -142,24 +156,22 @@ class ProcessState(ArrayTree):
         ).copy(frozen=True)
         assert not self._frozen
         assert not self.edge._frozen
-        print("AAAARgh")
         r = jax.vmap(
             lambda state, pk, edge, src, tgt: ArrayTree(
-                edge_fn(state._replace(prng_key=pk), edge, src, tgt)
+                edge_fn(state.copy(replacing={"prng_key": pk}), edge, src, tgt)
             ),
             in_axes=(None, 0, 0, 0, 0),
         )(
-            self._bare_copy(frozen=False),
-            jax.random.split(self.get_prng(), num=self["edge.i"].shape[0]),
+            self._bare_copy(frozen=True),
+            jax.random.split(self.next_prng_key(), num=self["edge.i"].shape[0]),
             self.edge.copy(frozen=True),
-            # self["edge.i"],
-            self["edge.i"],
+            # self.edge["i"],
             src_nodes,
-            # tgt_nodes,
+            # self.edge["i"],
+            tgt_nodes,
         ).copy(
             frozen=False
         )
-        print(r), r._frozen
         assert not self._frozen
         assert not self.edge._frozen
         self.edge.update(r)
@@ -178,16 +190,20 @@ class ProcessState(ArrayTree):
             pt._records = pt._records.copy()
         return pt
 
-    def record(self, key, value=None):
-        rs = self.records
+    def record_value(self, key, value=None):
+        """Add a record to the current record set of the current step.
+
+        Accepts both a key of an existing value (not of a subtree),
+        or the given value for arbitrary key.
+
+        Should be used within operations as the record set is collected
+        and actually recorded at the end of every step.
+        Does nothing on its own outside of `process.run()`.
+        """
         if value is None:
             value = self[key]
+        assert isinstance(value, jnp.ndarray)
         assert key not in self._record_set
-        if rs.steps != 0:
-            if key not in rs.last_record():
-                raise Exception(
-                    f"All record sets need to have the same keys (new key {key!r})"
-                )
         self._record_set[key] = value
 
     def _take_record_set(self) -> ArrayTree:
@@ -201,20 +217,28 @@ class ProcessState(ArrayTree):
         This does not copy the arrays to CPU from GPU.
         """
         self._records.block_on_all()
-        for v in jax.tree_util.tree_leaves(self):
+        for v in self.leaf_values():
             v.block_until_ready()
 
     def _assert_shapes(self):
-        for k, v in self.node.items():
+        for v in self.node.leaf_values():
             assert v.shape[0] == self.n
-        for k, v in self.edge.items():
+        for v in self.edge.leaf_values():
             assert v.shape[0] == self.m
 
     def _filter_underscored(self) -> "ProcessState":
-        s2 = self.copy()
-        for k in tuple(self.keys()):
-            if any(kp.startswith("_") for kp in k.split(".")):
-                s2._delitem_f(k)
+        """Returns an unfrozen copy with all `_underscored` keys removed (incl. underscored subtrees).
+
+        Also removes any empty subtrees."""
+        s2 = self.copy(frozen=False)
+        for k in tuple(s2.leaf_keys()):
+            if k in s2 and any(kp.startswith("_") for kp in k.split(".")):
+                del s2[k]
+        # Deeper nodes go before shallower ones in this order
+        for k, v in sorted(tuple(s2._iter_subtrees()), reverse=True):
+            if k in s2 and len(v) == 0:
+                del s2[k]
+
         return s2
 
     def _pad_to(self, n: int = None, m: int = None):

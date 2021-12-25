@@ -86,17 +86,18 @@ def test_prop_tree():
 
     p3 = PropTree(a=1)
     p3["b.c"] = [2, 3]
-    p3 = p3.copy(frozen=True)
-    p3b = p3["b"]
+    p3f = p3.copy(frozen=True)
+    p3["x"] = 1
+    p3b = p3f["b"]
     with pytest.raises(Exception):
-        p3["c"] = 9
+        p3f["c"] = 9
     with pytest.raises(Exception):
         p3b["d"] = 3
     assert (p3b["c"] == jnp.array([2, 3])).all()
-    p3 = p3.copy(frozen=False)
-    p3["c"] = 9
-    p3["b"]["e"] = 42
-    p3["b.f"] = 43
+    p3u = p3f.copy(frozen=False)
+    p3u["c"] = 9
+    p3u["b"]["e"] = 42
+    p3u["b.f"] = 43
 
 
 def test_integrality():

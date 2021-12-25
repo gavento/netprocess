@@ -174,8 +174,6 @@ class PropTree(MutableMapping):
     ) -> typing.Tuple[str, "PropTree"]:
         if isinstance(key, str):
             key = key.split(".")
-        if creating and self._frozen:
-            raise Exception("")
         assert len(key) >= 1
         if len(key) == 1:
             return key[0], self

@@ -108,6 +108,7 @@ class NetworkProcess:
         # Set step number
         # NB: this shuld be a noop with correct external step numbering
         state["step"] = step
+        state._record_set = PropTree()
 
         # Run all the update steps, updating the staself._run_step(s, si)te
         for op in self.operations:
@@ -123,6 +124,7 @@ class NetworkProcess:
             state.record(rk)
         # Collect record set into PropTree
         records = state._take_record_set()
+        state._record_set = None
 
         # Create the new state, filtering underlines and checking
         # that we only update existing keys
@@ -134,7 +136,7 @@ class NetworkProcess:
                     "Either add it to original state or mark it as temporary with leading '_' in name."
                 )
         # Finally, increment the step number and update the PRNG
-        state.step = state.step + 1
+        state["step"] = state["step"] + 1
         return state, records
 
     def new_state(
@@ -167,6 +169,8 @@ class NetworkProcess:
             network, prng_key, props=props, record_stride=record_stride
         )
         # Prepare state for operations
+        from ..operations.base import OperationBase
+
         for op in self.operations:
             if isinstance(op, OperationBase):
                 op.init_state(sd)

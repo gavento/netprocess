@@ -92,7 +92,7 @@ class ProcessState(PropTree):
 
     def get_prng(self) -> PRNGKey:
         """Return a new PRNG key, advancing `state.prng_key`."""
-        self.prng_key, prng2 = jax.random.split(self.prng_key)
+        self["prng_key"], prng2 = jax.random.split(self.prng_key)
         return prng2
 
     def apply_node_fn(self, node_fn: NodeFn):
@@ -109,7 +109,7 @@ class ProcessState(PropTree):
         self.edge.update(
             jax.vmap(
                 lambda state, pk, node, edges: node_fn(
-                    state._replace(prng_key=pk), node, edges
+                    PropTree(state._replace(prng_key=pk), node, edges)
                 ),
                 in_axes=(None, 0, 0, 0, 0),
             )(
@@ -117,6 +117,8 @@ class ProcessState(PropTree):
                 jax.random.split(self.get_prng(), self["node.i"].shape[0]),
                 self.node.copy(frozen=True),
                 edges,
+            ).copy(
+                frozen=False
             )
         )
 
@@ -131,26 +133,36 @@ class ProcessState(PropTree):
             edge_fn (EdgeFn): function applied to every edge.
         """
         assert not self._frozen
+        assert not self.edge._frozen
         src_nodes = jax.tree_util.tree_map(
             lambda a: a[self.edge["src"]], self.node
         ).copy(frozen=True)
         tgt_nodes = jax.tree_util.tree_map(
             lambda a: a[self.edge["tgt"]], self.node
         ).copy(frozen=True)
-        self.edge.update(
-            jax.vmap(
-                lambda state, pk, edge, src, tgt: edge_fn(
-                    state._replace(prng_key=pk), edge, src, tgt
-                ),
-                in_axes=(None, 0, 0, 0, 0),
-            )(
-                self._bare_copy(frozen=True),
-                jax.random.split(self.get_prng(), self["edge.i"].shape[0]),
-                self.edge.copy(frozen=True),
-                src_nodes,
-                tgt_nodes,
-            )
+        assert not self._frozen
+        assert not self.edge._frozen
+        print("AAAARgh")
+        r = jax.vmap(
+            lambda state, pk, edge, src, tgt: PropTree(
+                edge_fn(state._replace(prng_key=pk), edge, src, tgt)
+            ),
+            in_axes=(None, 0, 0, 0, 0),
+        )(
+            self._bare_copy(frozen=False),
+            jax.random.split(self.get_prng(), num=self["edge.i"].shape[0]),
+            self.edge.copy(frozen=True),
+            # self["edge.i"],
+            self["edge.i"],
+            src_nodes,
+            # tgt_nodes,
+        ).copy(
+            frozen=False
         )
+        print(r), r._frozen
+        assert not self._frozen
+        assert not self.edge._frozen
+        self.edge.update(r)
 
     def tree_flatten(self):
         f, a = super().tree_flatten()

@@ -68,6 +68,7 @@ def test_frozen():
     assert pfb._frozen
 
     pfb = pf["b"]
+    assert pfb._frozen
     with pytest.raises(Exception):
         pf["b"] = 9
     with pytest.raises(Exception):
@@ -78,3 +79,48 @@ def test_frozen():
     pu["c"] = 9
     pu["b"]["e"] = 42
     pu["b.f"] = 43
+
+    pf2 = ArrayTree(pf)
+    assert pf2._frozen
+    assert pf2["b"]._frozen
+
+    # Constructor preserves frozen status
+    p2 = ArrayTree({"a": ArrayTree(b=2).copy(frozen=True)})
+    assert not p2._frozen
+    assert p2["a"]._frozen
+    p3 = ArrayTree(p2)
+    assert not p3._frozen
+    assert p3["a"]._frozen
+
+
+def test_replacing():
+    pf = ArrayTree({"x.y": 42, "u.v.w": 43}).copy(frozen=True)
+    p = ArrayTree(a=pf, b={"c": 13, "d.e.f": 14})
+    assert not p._frozen
+    assert p["a"]._frozen
+
+    p2 = p.copy(
+        replacing={
+            "a.x.y": 44,
+            "foo": {},
+            "a.x.z.q.f": 1.0,
+            "a.u": ArrayTree({"z.zz": 7}),
+            "b.d": ArrayTree(e=0).copy(frozen=True),
+        }
+    )
+    print(p2)
+    assert p2["a.x.y"] == 44
+    assert p2["a.x.z.q.f"] == 1.0
+    assert p2["a.u.z.zz"] == 7
+    assert p2["a.u.v.w"] == 43
+    assert "foo" not in p2
+    assert p2["b.c"] == 13
+    assert p2["b.d.e"] == 0
+    assert p2.leaf_count() == 6
+
+    assert not p2._frozen
+    assert p2["a"]._frozen
+    assert p2["a.u"]._frozen
+    assert p2["a.u.z"]._frozen
+    assert not p2["b"]._frozen
+    # assert p2["b.d"]._frozen ## Subtree frozenness is lost

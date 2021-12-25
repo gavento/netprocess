@@ -1,3 +1,4 @@
+from re import L
 import typing
 from collections.abc import MutableMapping
 from typing import Any, Callable, Iterable, Union
@@ -56,6 +57,10 @@ class ArrayTree(MutableMapping):
             self[k] = v
         for k, v in kw_items.items():
             self[k] = v
+        if isinstance(items, ArrayTree) and items._frozen:
+            self._frozen = True
+            for _k, v in self._iter_subtrees():
+                v._frozen = True
 
     def __getitem__(self, key: typing.Union[str, tuple]) -> Any:
         if isinstance(key, str):
@@ -155,14 +160,44 @@ class ArrayTree(MutableMapping):
                     yield (f"{k}.{k2}", v2)
 
     def copy(self, frozen=None, replacing={}) -> "ArrayTree":
-        # Copy by going through flattening & unflattening
-        # This implies that subclasses only need to implement flatten/unflatten
-        # if they need special behavior on copy.
+        """Copy the tree, optionaly un/freezing and setting given values.
+
+        The copy is cheap as the ndarrays are immutable and shared.
+        Preserves subtree frozen status by default.
+
+        With `replacing`, sets the given key-value pairs.
+        Works if the some subtrees of `self` are frozen, preserving the frozenness.
+
+        Note that only leaf arrays are replaced, not entire subtrees!
+        Frozenness of any subtrees of `replacing` is currently ignored.
+
+        Note: Copy is performed through jax PyTree flattening & unflattening, so subclasses
+        only need to modify tree_`(un)flatten`.
+        """
         s = jax.tree_util.tree_map(lambda x: x, self)
         if frozen is not None:
             s._frozen = frozen
             for _k, v in s._iter_subtrees():
                 v._frozen = frozen
+        if replacing:
+            replacing = ArrayTree(replacing)
+            for k, v in replacing.leaf_items():
+                k = tuple(k.split("."))
+                r = s
+                while len(k) > 1 and k[0] in r:
+                    r = r[k[0]]
+                    k = k[1:]
+                if not r._frozen:
+                    r[k] = v
+                else:
+                    if len(k) > 1:
+                        v = ArrayTree({k[1:]: v})
+                        k = k[:1]
+                    if isinstance(v, ArrayTree):
+                        v = v.copy(frozen=True)
+                    r._frozen = False
+                    r[k[0]] = v
+                    r._frozen = True
         return s
 
     @classmethod

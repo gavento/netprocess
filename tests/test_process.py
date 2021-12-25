@@ -4,7 +4,7 @@ import networkx as nx
 from netprocess import Network, NetworkProcess, operations
 from netprocess.operations import OperationBase
 from netprocess.process import ProcessRecords, ProcessState
-from netprocess.utils.prop_tree import PropTree
+from netprocess.utils import ArrayTree
 
 
 def _new_state(process):
@@ -95,31 +95,31 @@ def test_nop_process():
 
 def test_records():
     pr = ProcessRecords(stride=1)
-    pr.add_record(PropTree(a=[1, 2, 3]))
+    pr.add_record(ArrayTree(a=[1, 2, 3]))
     assert len(pr) == 3
     assert pr.steps == 3
-    pr.add_record(PropTree(a=[4, 5]))
-    pr.add_record(PropTree(a=[]))
+    pr.add_record(ArrayTree(a=[4, 5]))
+    pr.add_record(ArrayTree(a=[]))
     assert len(pr) == 5
     assert pr.last_record()["a"] == 5
     pra = pr.all_records()
-    assert isinstance(pra, PropTree)
-    assert pra.data_eq(PropTree(a=[1, 2, 3, 4, 5]))
+    assert isinstance(pra, ArrayTree)
+    assert pra.data_eq(ArrayTree(a=[1, 2, 3, 4, 5]))
 
     print("second")
     pr = ProcessRecords(stride=3)
-    pr.add_record(PropTree(a=[0, 1, 2, 3, 4]))
+    pr.add_record(ArrayTree(a=[0, 1, 2, 3, 4]))
     assert len(pr) == 2
     assert pr.steps == 5
-    pr.add_record(PropTree(a=[]))
-    pr.add_record(PropTree(a=[5]))
-    pr.add_record(PropTree(a=[6]))
-    pr.add_record(PropTree(a=[7, 8, 9]))
-    pr.add_record(PropTree(a=[10]))
-    pr.add_record(PropTree(a=[11, 12, 13]))
+    pr.add_record(ArrayTree(a=[]))
+    pr.add_record(ArrayTree(a=[5]))
+    pr.add_record(ArrayTree(a=[6]))
+    pr.add_record(ArrayTree(a=[7, 8, 9]))
+    pr.add_record(ArrayTree(a=[10]))
+    pr.add_record(ArrayTree(a=[11, 12, 13]))
     pra = pr.all_records()
     print(pra)
-    assert pra.data_eq(PropTree(a=[0, 3, 6, 9, 12]))
+    assert pra.data_eq(ArrayTree(a=[0, 3, 6, 9, 12]))
 
 
 def test_branching_records():

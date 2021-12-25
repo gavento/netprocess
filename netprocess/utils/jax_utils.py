@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .types import Pytree
-from .prop_tree import PropTree
+from .array_tree import ArrayTree
 
 
 def ensure_array(a, dtype=None, concretize_types=True) -> jnp.ndarray:
@@ -170,14 +170,14 @@ def apply_scatter_op(
 
 def create_scatter_aggregates(
     n: int,
-    edge: PropTree,
+    edge: ArrayTree,
     targets: jnp.ndarray,
     active: jnp.ndarray = None,
-) -> PropTree:
+) -> ArrayTree:
     apply_op_to_tree = lambda op: jax.tree_util.tree_map(
         lambda a: apply_scatter_op(op, n, a, targets, active), edge
     )
-    return PropTree(
+    return ArrayTree(
         sum=apply_op_to_tree(jax.lax.scatter_add),
         prod=apply_op_to_tree(jax.lax.scatter_mul),
         min=apply_op_to_tree(jax.lax.scatter_min),

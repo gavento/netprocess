@@ -1,5 +1,5 @@
 from ..process.state import ProcessState
-from ..utils.prop_tree import PropTree
+from ..utils import ArrayTree
 
 from ..utils import PRNGKey
 

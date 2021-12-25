@@ -4,16 +4,16 @@ import jax
 import jax.numpy as jnp
 
 from ..network import Network
-from ..utils import PRNGKey, PropTree, jax_utils
+from ..utils import PRNGKey, ArrayTree, jax_utils
 from .records import ProcessRecords
 
-NodeFn = Callable[["ProcessState", PropTree, PropTree], PropTree]
-EdgeFn = Callable[["ProcessState", PropTree, PropTree, PropTree], PropTree]
-StateFn = Callable[["ProcessState"], PropTree]
+NodeFn = Callable[["ProcessState", ArrayTree, ArrayTree], ArrayTree]
+EdgeFn = Callable[["ProcessState", ArrayTree, ArrayTree, ArrayTree], ArrayTree]
+StateFn = Callable[["ProcessState"], ArrayTree]
 
 
 @jax.tree_util.register_pytree_node_class
-class ProcessState(PropTree):
+class ProcessState(ArrayTree):
     """
     Structure holding array data for a state to be passed to JIT-able functions. A subclass of PropTree.
 
@@ -46,8 +46,8 @@ class ProcessState(PropTree):
     m: jnp.int32
     step: jnp.int32
     prng_key: PRNGKey
-    edge: PropTree
-    node: PropTree
+    edge: ArrayTree
+    node: ArrayTree
 
     @classmethod
     def from_network(
@@ -74,7 +74,7 @@ class ProcessState(PropTree):
 
         s._records = ProcessRecords(stride=record_stride)
         s._network = net
-        s._record_set = PropTree()
+        s._record_set = ArrayTree()
         s._assert_shapes()
         return s
 
@@ -109,7 +109,7 @@ class ProcessState(PropTree):
         self.edge.update(
             jax.vmap(
                 lambda state, pk, node, edges: node_fn(
-                    PropTree(state._replace(prng_key=pk), node, edges)
+                    ArrayTree(state._replace(prng_key=pk), node, edges)
                 ),
                 in_axes=(None, 0, 0, 0, 0),
             )(
@@ -144,7 +144,7 @@ class ProcessState(PropTree):
         assert not self.edge._frozen
         print("AAAARgh")
         r = jax.vmap(
-            lambda state, pk, edge, src, tgt: PropTree(
+            lambda state, pk, edge, src, tgt: ArrayTree(
                 edge_fn(state._replace(prng_key=pk), edge, src, tgt)
             ),
             in_axes=(None, 0, 0, 0, 0),
@@ -190,9 +190,9 @@ class ProcessState(PropTree):
                 )
         self._record_set[key] = value
 
-    def _take_record_set(self) -> PropTree:
+    def _take_record_set(self) -> ArrayTree:
         r = self._record_set
-        self._record_set = PropTree()
+        self._record_set = ArrayTree()
         return r.copy(frozen=True)
 
     def block_on_all(self):
@@ -226,7 +226,7 @@ class ProcessState(PropTree):
             s = s._replace(m=m, node=jax_utils.pad_pytree_to(s.edge, self.m, m))
         return s
 
-    def _aggregate_edges(self) -> PropTree:
+    def _aggregate_edges(self) -> ArrayTree:
         """Compute edge-to-node value aggregates"""
         in_edges_agg = jax_utils.create_scatter_aggregates(
             self.node["i"].shape[0],
@@ -252,7 +252,7 @@ class ProcessState(PropTree):
             )
             for agg_name, comb2 in COMB_2.items()
         }
-        return PropTree(
+        return ArrayTree(
             {"in": in_edges_agg, "out": out_edges_agg, "all": both_edges_agg}
         )
 

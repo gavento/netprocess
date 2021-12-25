@@ -4,7 +4,7 @@ import typing
 import jax.numpy as jnp
 import numpy as np
 
-from netprocess.utils.prop_tree import PropTree
+from netprocess.utils.array_tree import ArrayTree
 
 log = logging.getLogger(__name__)
 
@@ -36,12 +36,12 @@ class KeyOrValue:
             if default is not None:
                 raise Exception("Warning: Do not combine a value with a default")
 
-    def get_from(self, pt: PropTree):
+    def get_from(self, pt: ArrayTree):
         if self.value is not None:
             return self.value
         return pt[self.key]
 
-    def ensure_in(self, pt: PropTree, repeat_times=None):
+    def ensure_in(self, pt: ArrayTree, repeat_times=None):
         if self.key is not None and self.key not in pt and not self.key.startswith("_"):
             if self.default is not None:
                 if repeat_times is None:

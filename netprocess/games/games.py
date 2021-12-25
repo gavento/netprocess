@@ -6,7 +6,7 @@ from numpy import float32
 
 from ..operations import EdgeUpdateData, NodeUpdateData, OperationBase
 from ..process import ProcessState
-from ..utils import KeyOrValue, KeyOrValueT, PropTree
+from ..utils import KeyOrValue, KeyOrValueT, ArrayTree
 from .policies import PlayerPolicyBase, EpsilonErrorPolicy
 
 
@@ -62,7 +62,7 @@ class NormalFormGameBase(OperationBase):
     def n(self):
         return len(self.action_set)
 
-    def get_payoff(self, a1, a2, player, data: PropTree = None) -> jnp.DeviceArray:
+    def get_payoff(self, a1, a2, player, data: ArrayTree = None) -> jnp.DeviceArray:
         p = self.payouts.get_from(data)
         assert p.shape == (self.n, self.n, 2) or p.shape == (self.n, self.n)
         if len(p.shape) == 3:
@@ -91,7 +91,7 @@ class NormalFormGameBase(OperationBase):
         self.action_counts.ensure_in(state.node, repeat_times=state.n)
         self.cummulative_regret.ensure_in(state.node, repeat_times=state.n)
 
-    def update_edge(self, data: EdgeUpdateData) -> PropTree:
+    def update_edge(self, data: EdgeUpdateData) -> ArrayTree:
         """
         Compute the payoffs for all actions vs the the other player's `next_action`.
         """
@@ -104,7 +104,7 @@ class NormalFormGameBase(OperationBase):
             ),
         }
 
-    def update_node(self, data: NodeUpdateData) -> PropTree:
+    def update_node(self, data: NodeUpdateData) -> ArrayTree:
         actions_payoff = (
             data.in_edges["sum"][self.key("_tgt_node_action_payoffs")]
             + data.out_edges["sum"][self.key("_src_node_action_payoffs")]
@@ -146,7 +146,7 @@ class BestResponseGame(NormalFormGameBase):
         self.update_probability.ensure_in(state)
         self.player_policy.prepare_state_data(state)
 
-    def update_node(self, data: NodeUpdateData) -> PropTree:
+    def update_node(self, data: NodeUpdateData) -> ArrayTree:
         up = super().update_node(data)
         actions_payoff = self._action_payoffs.get_from(up)
         prng_key0, prng_key1, prng_key2 = jax.random.split(data.prng_key, 3)
@@ -196,7 +196,7 @@ class RegretMatchingGame(NormalFormGameBase):
         self.mu.ensure_in(state)
         self.action_counterfactual_payoffs.ensure_in(state.node, repeat_times=state.n)
 
-    def update_node(self, data: NodeUpdateData) -> PropTree:
+    def update_node(self, data: NodeUpdateData) -> ArrayTree:
         up = super().update_node(data)
         last_action = self.action.get_from(up)
         action_payoffs = self._action_payoffs.get_from(up)

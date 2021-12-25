@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from ..network import Network
-from ..utils import PropTree
+from ..utils import ArrayTree
 from .state import ProcessState
 
 log = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class NetworkProcess:
         steps_array: jnp.DeviceArray,
         tracing: bool,
         jit: bool,
-    ) -> Tuple[PropTree, ProcessState]:
+    ) -> Tuple[ArrayTree, ProcessState]:
         """Returns (new_state, all_records_pytree). JIT-able when jit=True."""
         if tracing:
             self._traced += 1
@@ -108,7 +108,7 @@ class NetworkProcess:
         # Set step number
         # NB: this shuld be a noop with correct external step numbering
         state["step"] = step
-        state._record_set = PropTree()
+        state._record_set = ArrayTree()
 
         # Run all the update steps, updating the staself._run_step(s, si)te
         for op in self.operations:
@@ -142,7 +142,7 @@ class NetworkProcess:
     def new_state(
         self,
         network: Network,
-        props: PropTree = {},
+        props: ArrayTree = {},
         *,
         seed=None,
         record_stride: int = 1,

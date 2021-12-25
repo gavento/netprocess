@@ -1,103 +1,14 @@
-from attr import frozen
+import functools
+
 import jax
 import jax.numpy as jnp
-import pytest
-import functools
-from netprocess.utils import jax_utils, utils
-from netprocess.utils import prop_tree
-from netprocess.utils.prop_tree import PropTree
 import numpy as np
+import pytest
+from netprocess.utils import ArrayTree, jax_utils, utils
 
 
 def a(*els, **kws):
     return jnp.array(els, **kws)
-
-
-class PT1(PropTree):
-    a: PropTree
-    b: jnp.ndarray
-
-
-class PT0(PropTree):
-    _OTHER_PROPS = False
-    x: PT1
-    y: PT1
-    w: int
-
-
-def test_prop_tree_types():
-    p1 = PT1(b=(1, 2), a={})
-    assert isinstance(p1, PT1)
-    assert not isinstance(p1.a, PT1)
-    assert isinstance(p1.b, jnp.ndarray)
-    p1["nonex"] = 13
-
-    p0 = PT0()
-    p0["x.a.foo"] = 42
-    assert isinstance(p0.x, PT1)
-    assert not isinstance(p0.x, PT0)
-    assert not isinstance(p0.x.a, PT1)
-    assert not isinstance(p0.x.a, PT0)
-    assert p0.x.a["foo"] == 42
-    with pytest.raises(AttributeError):
-        p0["nonex"] = 13
-
-
-def test_prop_tree():
-    p = PropTree()
-    assert len(p) == 0
-
-    p = PropTree({"a.b": 42, "a.c": (2, 3, 4)}, x=False)
-    assert p["a"]["b"] == 42
-    assert p["a", "b"] == 42
-    assert p["a.b"] == 42
-    assert p["a.c"][0] == 2
-    assert p.top_len() == 2
-    assert len(p) == 3
-    assert set(p.keys()) == set(["a.b", "a.c", "x"])
-    assert len(p["a"]) == 2
-    assert len(jax.tree_util.tree_leaves(p)) == 3
-    assert jax.tree_util.tree_map(lambda x: x + 1, p)["a.c"][0] == 3
-
-    p["c.d"] = (13,)
-    assert p["c"]["d"][0] == 13
-    assert "a" in p
-    assert "b" in p["a"]
-    assert "z" not in p
-
-    def uncalled():
-        assert False
-
-    assert p.setdefault("e-2/3", lambda: 18) == 18
-    assert p.setdefault("e-2/3", 19) == 18
-    assert p.setdefault("e-2/3", uncalled) == 18
-
-    p2 = jax.tree_util.tree_map(lambda x: x, p)
-    assert list(p2.items()) == list(p.items())
-
-    assert p.data_eq(p2)
-    assert not PropTree(a=1, b=2).data_eq(PropTree(a=1))
-    assert not PropTree(a=1).data_eq(PropTree(a=1, b=2))
-    assert PropTree(a={"x": 1}).data_eq(PropTree(a={"x": 1}, b={"c": {}}))
-    assert PropTree(a={"x": True}).data_eq(PT1(a={"x": True}, z={}))
-    assert PropTree(a=1.13).data_eq(PropTree(a=1.13))
-    assert not PropTree(a=1.13).data_eq(PropTree(a=1.13001))
-    assert PropTree(a=1.13).data_eq(PropTree(a=1.13001), eps=0.001)
-
-    p3 = PropTree(a=1)
-    p3["b.c"] = [2, 3]
-    p3f = p3.copy(frozen=True)
-    p3["x"] = 1
-    p3b = p3f["b"]
-    with pytest.raises(Exception):
-        p3f["c"] = 9
-    with pytest.raises(Exception):
-        p3b["d"] = 3
-    assert (p3b["c"] == jnp.array([2, 3])).all()
-    p3u = p3f.copy(frozen=False)
-    p3u["c"] = 9
-    p3u["b"]["e"] = 42
-    p3u["b.f"] = 43
 
 
 def test_integrality():
@@ -167,9 +78,7 @@ def test_apply_scatter_op():
 
 def test_create_scatter_aggregates():
     T, F = True, False
-    pt = prop_tree.PropTree(
-        x=a(2, 1, -3, 3), y=a(F, T, T, T), z=a(2.0, 3.0, -np.inf, 1.0)
-    )
+    pt = ArrayTree(x=a(2, 1, -3, 3), y=a(F, T, T, T), z=a(2.0, 3.0, -np.inf, 1.0))
     r = jax_utils.create_scatter_aggregates(3, pt, a(2, 0, 0, 2), active=a(1, 1, 1, 0))
     assert (r["sum.x"] == a(-2, 0, 2)).all()
     assert (r["sum.y"] == a(2, 0, 0)).all()

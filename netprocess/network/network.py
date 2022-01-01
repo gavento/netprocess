@@ -56,7 +56,8 @@ class Network:
         """Lazily opened H5 file for network data."""
         if self._h5_file is None:
             if self.h5_path is None:
-                self._h5_file = h5py.File(io.BytesIO(), mode="w")
+                self._h5_memdata = io.BytesIO()
+                self._h5_file = h5py.File(self._h5_memdata, mode="w")
             else:
                 self._h5_file = h5py.File(self.h5_path, mode="a")
         return self._h5_file
@@ -70,19 +71,32 @@ class Network:
             self._network.add_edges_from(self.edges)
         return self._network
 
-    def write(self, indent=2):
+    def write(self, path: Path = None, indent=2, mode="w"):
         """
         Write/update JSON and flush the H5 file without closing it (if open).
         """
+        if path is not None:
+            self.json_path = Path(path)
         if self.json_path is None:
-            raise ValueError(f"Error: can't write a Network created without path.")
+            raise ValueError(
+                f"Error: can't write a Network without path given on opening, creation or write()."
+            )
 
-        with utils.open_file(self.json_path, mode="wt") as f:
+        with file_utils.open_file(self.json_path, mode=f"{mode}t") as f:
             json.dump(utils.jsonize(self.attribs), f, indent=indent)
             f.write("\n")
 
         if self._h5_file is not None:
-            self._h5_file.flush()
+            if self.h5_path is None:
+                # Copy the in-memory H5 file to named file
+                self._h5_file.close()
+                self._h5_file = None
+                base_path = file_utils.file_basic_path(self.json_path, ".json")
+                self.h5_path = base_path.with_name(base_path.name + ".h5")
+                self.h5_path.write_bytes(self._h5_memdata.getvalue())
+                self._h5_memdata = None
+            else:
+                self._h5_file.flush()
 
     def export_graphml(self, compress_gzip=True) -> Path:
         """

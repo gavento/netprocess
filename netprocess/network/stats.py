@@ -24,14 +24,21 @@ def _stat_dict(prefix, data, qs=True):
     return sts
 
 
-def compute_degree_powerlaw(g):
+def compute_degree_powerlaw(g, xmin=None):
+    """Compute degree distribution powerlaw exponent with `powerlaw.Fit`.
+
+    The range is automatically determined if `xmin==None`, use `xmin=number` for a concrete
+    range, or `xmin=True` to use the smallest degree as `xmin`.
+    """
     sts = {}
     degs = [k for _, k in g.degree()]
+    if xmin == True:
+        xmin = np.min(degs)
     try:
-        # powerlaw.Fit prints progress messages to stdout :/
+        # powerlaw.Fit always prints progress messages to stdout :/
         s0 = sys.stdout
         sys.stdout = io.StringIO()
-        fit = powerlaw.Fit(degs, discrete=True, verbose=False)
+        fit = powerlaw.Fit(degs, discrete=True, verbose=False, xmin=xmin)
     finally:
         sys.stdout = s0
     sts["degree_powerlaw_alpha"] = fit.power_law.alpha
